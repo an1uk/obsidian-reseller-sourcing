@@ -1,8 +1,8 @@
 # Reseller sourcing
 
-An Obsidian plugin for planning sourcing trips, remembering places and recording visits. Version **0.11.0** is a desktop/Android candidate. Your records remain readable Markdown and YAML; inventory and sales can stay in your existing tools.
+An Obsidian plugin for planning sourcing trips, remembering places and recording visits. Version **0.11.0** is an **early release** for desktop and Android. Your records remain readable Markdown and YAML; inventory and sales can stay in your existing tools.
 
-Download the [0.11.0 candidate release](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.11.0) for desktop or Android. Source: [an1uk/obsidian-reseller-sourcing](https://github.com/an1uk/obsidian-reseller-sourcing). This is a prerelease for testing; the plugin is not yet listed in Community Plugins.
+Download the [0.11.0 release](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.11.0) for desktop or Android. Source: [an1uk/obsidian-reseller-sourcing](https://github.com/an1uk/obsidian-reseller-sourcing). The plugin is not yet listed in Community Plugins.
 
 ## Start in the workspace
 
@@ -90,7 +90,7 @@ npm test
 
 Desktop and Android use the same plugin ID **charity-sourcing**, version, and three assets: **main.js**, **manifest.json**, **styles.css**. Minimum Obsidian version is **1.14.4**. No separate Android build or APK is needed.
 
-For manual installation, close Obsidian, extract the ZIP's `charity-sourcing` folder into your vault's `.obsidian/plugins/`, reopen Obsidian and enable **Reseller sourcing** under Community plugins. Alternatively, copy the three assets from `dist/release/` into that folder. On Android, use a file manager with access to the vault. Back up an existing installation before replacing its three assets, and preserve its `data.json` settings file. Start with a separate test vault while evaluating this candidate.
+For manual installation, close Obsidian, extract the ZIP's `charity-sourcing` folder into your vault's `.obsidian/plugins/`, reopen Obsidian and enable **Reseller sourcing** under Community plugins. Alternatively, copy the three assets from `dist/release/` into that folder. On Android, use a file manager with access to the vault. Back up an existing installation before replacing its three assets, and preserve its `data.json` settings file. Start with a separate test vault while evaluating this early release.
 
 The portable test suite skips three optional integration checks unless `CLIPPER_TEST_HARNESS_DIR` points to a locally supplied harness for the installed Web Clipper/compiler and native Bases formula integration. That harness is not distributed here. The remaining tests do not require it. See [VALIDATION.md](VALIDATION.md) for the distinction between portable tests and historical native/device acceptance.
 
