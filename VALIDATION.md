@@ -49,4 +49,4 @@ Physical testing identified toolbar overlap and an oversized popup hiding naviga
 
 Interactive Chrome capture, real desktop–Android notebook sync, repeated live Google Maps destination-capacity tests and location-permission flows remain outstanding. Phone checks above cover the 0.11.0 workspace and do not establish every browser, handler or device configuration. Google Maps export profile limits are targets rather than a guarantee that every receiving handler accepts the full route; review imported destinations before travelling.
 
-The source publication does not submit the plugin to Community Plugins or publish GitHub release binaries. Device-specific acceptance drivers, deployment helpers and private evidence remain local and are not required for the public build.
+The [0.11.0 candidate release](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.11.0) provides the shared desktop/Android assets, universal ZIP and SHA-256 checksums as a prerelease for testing. It is not a Community Plugins submission. Device-specific acceptance drivers, deployment helpers and private evidence remain local and are not required for the public build.

@@ -2,7 +2,7 @@
 
 An Obsidian plugin for planning sourcing trips, remembering places and recording visits. Version **0.11.0** is a desktop/Android candidate. Your records remain readable Markdown and YAML; inventory and sales can stay in your existing tools.
 
-Source: [an1uk/obsidian-reseller-sourcing](https://github.com/an1uk/obsidian-reseller-sourcing). The plugin is not yet listed in Community Plugins, and no GitHub release assets have been published. Build it locally using the instructions below.
+Download the [0.11.0 candidate release](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.11.0) for desktop or Android. Source: [an1uk/obsidian-reseller-sourcing](https://github.com/an1uk/obsidian-reseller-sourcing). This is a prerelease for testing; the plugin is not yet listed in Community Plugins.
 
 ## Start in the workspace
 
@@ -73,6 +73,8 @@ Editing a historical visit date preserves its existing path. Markdown stays read
 The optional Guided tour can be deleted independently. Deleted example records or the entire Examples folder remain deleted across reopening, repairs and updates. Existing example packs are not rewritten or automatically restored. Earlier pack versions remain available only for explicitly continuing an interrupted installation.
 
 ## Build and install
+
+For the ready-to-install package, download **charity-sourcing-0.11.0.zip** from the [release page](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.11.0). The same release also provides **main.js**, **manifest.json** and **styles.css** separately, plus **release-checksums.json** with SHA-256 hashes. Desktop and Android use the same files. Follow the manual installation steps below.
 
 Use **Node.js 22 or newer** and npm:
 
