@@ -1,0 +1,451 @@
+.charity-sourcing .charity-actions, .charity-parking-list, .charity-nearby { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:12px 0; }
+.charity-actions a { padding:6px 0; }
+.charity-sourcing button, .charity-capture-modal button, .charity-visit-modal button { min-height:36px; }
+.charity-sourcing .setting-item { border:0; padding:8px 0; }
+.charity-sourcing .setting-item-control { flex-wrap:wrap; }
+.charity-sourcing .setting-item input[type=text] { width:100%; min-width:160px; }
+.charity-capture-modal, .charity-visit-modal { width:min(780px,94vw); }
+.charity-capture-modal .setting-item, .charity-visit-modal .setting-item { align-items:flex-start; }
+.charity-capture-modal .setting-item-control, .charity-visit-modal .setting-item-control { flex:1; min-width:0; }
+.charity-capture-modal .setting-item input, .charity-capture-modal .setting-item textarea, .charity-visit-modal textarea { width:100%; }
+.charity-capture-preview .charity-map { height:300px !important; }
+.charity-error { color:var(--text-error); white-space:pre-wrap; margin:8px 0; }
+.charity-hint { color:var(--text-muted); }
+.charity-details { border-top:1px solid var(--background-modifier-border); margin:12px 0; padding-top:8px; }
+.charity-details > summary { cursor:pointer; padding:8px 0; color:var(--text-muted); }
+.charity-details[open] > summary { margin-bottom:8px; }
+.charity-save-status { min-height:1.5em; font-size:var(--font-smallest); color:var(--text-muted); }
+.charity-save-status.charity-error { color:var(--text-error); }
+.charity-destination { font-size:var(--font-smallest); color:var(--text-muted); overflow-wrap:anywhere; margin-bottom:8px; }
+.charity-modal-footer { position:sticky; bottom:0; background:var(--background-primary); padding:12px 0 4px; border-top:1px solid var(--background-modifier-border); z-index:3; }
+.charity-modal-footer button { min-width:130px; }
+.charity-locality-list { list-style:none; padding:0; }
+.charity-locality-list li { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:8px 0; }
+.charity-locality-list li button:first-child { text-align:left; flex:1; }
+.charity-move-preview li { overflow-wrap:anywhere; }
+.charity-empty-state, .charity-tile-settings { border:1px solid var(--background-modifier-border); border-radius:8px; padding:12px; margin:12px 0; }
+.charity-sourcing-wide { --file-line-width:100%; }
+.markdown-preview-view.charity-sourcing-wide .markdown-preview-sizer { max-width:100%; }
+.markdown-source-view.charity-sourcing-wide .cm-contentContainer { max-width:100%; }
+@media (max-width:600px) {
+  .charity-capture-modal .setting-item, .charity-visit-modal .setting-item, .charity-sourcing .setting-item { flex-direction:column; gap:6px; }
+  .charity-capture-modal .setting-item-control, .charity-visit-modal .setting-item-control, .charity-sourcing .setting-item-control { width:100%; justify-content:flex-start; }
+  .charity-sourcing button, .charity-capture-modal button, .charity-visit-modal button, .charity-details > summary { min-height:44px; }
+  .charity-capture-preview .charity-map { height:280px !important; }
+  .charity-modal-footer button { width:100%; }
+  .charity-visit-modal textarea { min-height:100px; }
+}
+
+.charity-area-editor .setting-item-control { flex-wrap:wrap; gap:8px; }
+.charity-area-editor input { flex:1; min-width:160px; }
+.charity-area-editor .setting-item-description { max-width:300px; }
+.charity-area-evidence { color:var(--text-muted); font-size:var(--font-small); margin:8px 0; }
+.charity-area-staged { margin:8px 0; font-size:var(--font-small); }
+.charity-change-area-modal { width:min(780px,94vw); }
+@media (max-width:600px) {
+  .charity-change-area-modal .setting-item { flex-direction:column; gap:6px; }
+  .charity-change-area-modal .setting-item-control { width:100%; }
+  .charity-change-area-modal button { min-height:44px; }
+}
+.charity-outing-modal, .charity-outing-visit-modal { width:min(820px,94vw); }
+.charity-outing-modal .setting-item, .charity-outing-visit-modal .setting-item { align-items:flex-start; }
+.charity-outing-modal .setting-item-control, .charity-outing-visit-modal .setting-item-control { flex:1; min-width:0; flex-wrap:wrap; }
+.charity-outing-modal input[type=text], .charity-outing-modal input[type=search], .charity-outing-visit-modal textarea { width:100%; }
+.charity-outing-modal button, .charity-outing-visit-modal button, .charity-outing button { min-height:38px; }
+.charity-outing-filters { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+.charity-outing-filters > * { flex:1; min-width:130px; }
+.charity-outing-candidates { max-height:240px; overflow-y:auto; border:1px solid var(--background-modifier-border); border-radius:8px; padding:6px 12px; }
+.charity-outing-candidates .setting-item { padding:6px 0; }
+.charity-outing-stop, .charity-outing-group, .charity-outing-current { border:1px solid var(--background-modifier-border); border-radius:8px; padding:12px; margin:10px 0; }
+.charity-outing-current { border-color:var(--interactive-accent); }
+.charity-outing-current h3, .charity-outing-group h4 { margin:0 0 8px; }
+.charity-outing-stop-heading { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.charity-outing-stop-heading > span:first-child { flex:1; }
+.charity-outing-stop-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.charity-outing-summary { color:var(--text-muted); font-size:var(--font-small); margin:8px 0; }
+.charity-outing-context { white-space:pre-wrap; margin:8px 0; }
+.charity-outing-order-preview { border-left:3px solid var(--interactive-accent); padding:8px 12px; margin:10px 0; }
+.charity-outing-status { font-size:var(--font-smallest); padding:3px 7px; border-radius:12px; background:var(--background-secondary); }
+.charity-outing-history-row { padding:12px 0; border-bottom:1px solid var(--background-modifier-border); }
+.charity-outing-history-row .charity-actions { margin:8px 0; }
+.charity-outing-draft-status { min-height:1.5em; color:var(--text-muted); font-size:var(--font-small); }
+.charity-outing-draft-status.charity-error { color:var(--text-error); }
+.charity-outing-map .charity-map { height:min(500px,65vh) !important; }
+@media (max-width:600px) {
+  .charity-outing-modal .setting-item, .charity-outing-visit-modal .setting-item { flex-direction:column; gap:6px; }
+  .charity-outing-modal .setting-item-control, .charity-outing-visit-modal .setting-item-control { width:100%; justify-content:flex-start; }
+  .charity-outing-modal button, .charity-outing-visit-modal button, .charity-outing button { min-height:44px; }
+  .charity-outing-current .charity-actions > button, .charity-outing-current .charity-actions > a { flex:1; text-align:center; }
+  .charity-outing-visit-modal textarea { min-height:110px; }
+}
+
+.charity-outing-modal .charity-actions, .charity-outing-visit-modal .charity-actions { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+
+.markdown-preview-view.charity-sourcing-outing .metadata-container,
+.markdown-source-view.is-live-preview.charity-sourcing-outing .metadata-container { display:none; }
+.charity-outing .charity-actions > a { box-sizing:border-box; overflow-wrap:anywhere; }
+@media (max-width:600px) {
+  .charity-outing .charity-actions > a,
+  .charity-outing-current .charity-actions > button {
+    flex:1 1 calc(50% - 8px);
+    min-width:min(150px,100%);
+    max-width:100%;
+    white-space:normal;
+    text-align:center;
+  }
+  .charity-outing .charity-actions > a {
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:44px;
+    padding:8px;
+    border:1px solid var(--background-modifier-border);
+    border-radius:6px;
+  }
+  .charity-outing-current .charity-outing-progress-actions > .mod-cta { flex-basis:100%; }
+}
+
+.charity-sourcing .charity-place-controls > .setting-item {
+  padding:10px 12px;
+  margin:4px 0;
+  column-gap:16px;
+  border-radius:6px;
+}
+.charity-sourcing .charity-place-controls > .setting-item .setting-item-control {
+  gap:8px;
+  padding:2px 0;
+}
+.charity-sourcing .charity-place-controls > .setting-item input[type=text] {
+  box-sizing:border-box;
+  min-height:36px;
+  padding:7px 10px;
+}
+.charity-sourcing .charity-place-controls > .setting-item select {
+  box-sizing:border-box;
+  height:auto;
+  min-height:36px;
+  max-width:100%;
+  padding-block:6px;
+  padding-inline:10px 28px;
+}
+@media (max-width:600px) {
+  .charity-sourcing .charity-place-controls > .setting-item { padding:12px 10px; gap:8px; }
+  .charity-sourcing .charity-place-controls > .setting-item input[type=text],
+  .charity-sourcing .charity-place-controls > .setting-item select { min-height:44px; }
+  .charity-sourcing .charity-place-controls > .setting-item input[type=text] { min-width:0; }
+}
+
+.charity-clipper-modal .charity-actions {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:var(--size-4-2);
+  margin-block:var(--size-4-3);
+}
+.charity-clipper-modal .charity-actions > p { flex-basis:100%; margin-block:0; }
+.charity-clipper-modal button {
+  white-space:normal;
+  height:auto;
+  min-height:var(--input-height);
+  max-width:100%;
+  padding:var(--size-4-2) var(--size-4-3);
+}
+.charity-clipper-template { margin-block:var(--size-4-5); }
+.charity-clipper-template .setting-item { gap:var(--size-4-3); }
+.charity-clipper-template .setting-item-info { min-width:0; }
+.charity-clipper-modal li, .charity-clipper-modal p { overflow-wrap:anywhere; }
+
+@media (max-width:600px) {
+  .charity-clipper-modal button { min-height:44px; }
+}
+
+.charity-clipper-modal .charity-modal-footer { position:static; }
+
+.charity-license-text {
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  max-height:50vh;
+  overflow:auto;
+  user-select:text;
+}
+.charity-attach-modal, .charity-copy-modal { width:min(700px,94vw); }
+.charity-attach-modal .setting-item-control { min-width:0; flex:1; }
+.charity-attach-modal input { width:100%; }
+.is-mobile .charity-sourcing button,
+.is-mobile .charity-attach-modal button,
+.is-mobile .charity-copy-modal button,
+.is-mobile .charity-contact-modal button,
+.is-mobile .charity-change-area-modal button,
+.is-mobile .charity-locality-modal button,
+.is-mobile .charity-mobile-capture-help button {
+  min-height:44px;
+  height:auto;
+  white-space:normal;
+}
+.is-mobile .charity-sourcing a { min-height:44px; display:inline-flex; align-items:center; }
+.is-mobile .charity-sourcing summary { min-height:44px; padding-block:8px; box-sizing:border-box; }
+.is-mobile .charity-attach-modal .setting-item,
+.is-mobile .charity-contact-modal .setting-item { display:block; }
+.is-mobile .charity-attach-modal .setting-item-control,
+.is-mobile .charity-contact-modal .setting-item-control { margin-top:8px; width:100%; }
+.is-mobile .charity-attach-modal .charity-modal-footer { position:static; }
+
+.is-mobile :is(.charity-capture-modal, .charity-contact-modal, .charity-visit-modal, .charity-attach-modal, .charity-locality-modal, .charity-change-area-modal, .charity-outing-modal, .charity-outing-visit-modal) :is(input:not([type=checkbox]):not([type=radio]), select, .dropdown) {
+  min-height:44px; max-width:100%; box-sizing:border-box;
+}
+
+/* Reviewed outing route export, scoped to its own modal. */
+.charity-outing-route-modal { width:min(760px,94vw); }
+.charity-outing-route-modal .modal-content { overflow-y:auto; overflow-x:hidden; }
+.charity-outing-route-modal .setting-item-info { min-width:0; }
+.charity-outing-route-modal .setting-item-control { min-width:0; }
+.charity-outing-route-modal :is(p,strong,h3,li) { overflow-wrap:anywhere; }
+.charity-outing-route-modal .charity-actions { display:flex; flex-wrap:wrap; gap:var(--size-4-2); margin-block:var(--size-4-2); }
+.charity-outing-route-modal button { min-height:44px; max-width:100%; height:auto; white-space:normal; padding:var(--size-4-2) var(--size-4-3); }
+.charity-outing-route-modal :is(select,.dropdown) { min-height:44px; max-width:100%; }
+.charity-outing-route-status:not(:empty) { margin-block:var(--size-4-3); padding:var(--size-4-2); border-left:3px solid var(--interactive-accent); }
+.charity-outing-route-part,
+.charity-outing-route-problem,
+.charity-outing-route-excluded-item { border:1px solid var(--background-modifier-border); border-radius:var(--radius-m); padding:var(--size-4-3); margin-block:var(--size-4-3); }
+.charity-outing-route-part > h3 { margin-top:0; }
+.charity-outing-route-destinations { padding-inline-start:var(--size-4-5); }
+.charity-outing-route-destination { padding-block:var(--size-4-2); }
+.charity-outing-route-destination + .charity-outing-route-destination { border-top:1px solid var(--background-modifier-border); }
+.charity-outing-route-kind { color:var(--text-muted); font-size:var(--font-ui-small); margin-bottom:var(--size-4-1); }
+.charity-outing-route-summary { font-weight:var(--font-semibold); }
+@media (max-width:600px) {
+  .charity-outing-route-modal .setting-item { align-items:stretch; flex-direction:column; gap:var(--size-4-2); }
+  .charity-outing-route-modal .setting-item-control { width:100%; }
+  .charity-outing-route-modal .setting-item-control :is(select,.dropdown) { width:100%; }
+  .charity-outing-route-part,
+  .charity-outing-route-problem,
+  .charity-outing-route-excluded-item { padding:var(--size-4-2); }
+}
+
+/* Reviewed source capture updates. */
+.charity-capture-refresh-modal { width:min(840px,94vw); }
+.charity-capture-refresh-modal .modal-content { overflow-y:auto; overflow-x:hidden; }
+.charity-capture-refresh-modal :is(p,strong,label,span) { overflow-wrap:anywhere; }
+.charity-capture-refresh-modal .charity-actions,
+.charity-capture-refresh-actions { display:flex; flex-wrap:wrap; gap:var(--size-4-2); margin-block:var(--size-4-3); }
+.charity-capture-refresh-modal button { min-height:44px; height:auto; max-width:100%; white-space:normal; padding:var(--size-4-2) var(--size-4-3); }
+.charity-capture-refresh-modal :is(select,.dropdown) { min-height:44px; width:100%; max-width:100%; }
+.charity-capture-refresh-target-label { display:block; font-weight:var(--font-semibold); margin-block:var(--size-4-2); }
+.charity-capture-refresh-target { margin-block:var(--size-4-3); }
+.charity-capture-refresh-target > p { margin-top:var(--size-4-1); }
+.charity-capture-refresh-status:not(:empty) { margin-block:var(--size-4-3); padding:var(--size-4-2); border-left:3px solid var(--interactive-accent); }
+.charity-capture-refresh-field { margin-block:var(--size-4-3); padding:var(--size-4-3); border:1px solid var(--background-modifier-border); border-radius:var(--radius-m); }
+.charity-capture-refresh-choice { display:flex; align-items:center; gap:var(--size-4-3); min-height:44px; cursor:pointer; font-weight:var(--font-semibold); }
+.charity-capture-refresh-choice input { flex-shrink:0; }
+.charity-capture-refresh-values { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:var(--size-4-4); padding-block:var(--size-4-2); }
+.charity-capture-refresh-values p { margin-block:var(--size-4-1); white-space:pre-wrap; user-select:text; }
+.charity-capture-refresh-value-label { color:var(--text-muted); font-size:var(--font-ui-small); }
+.charity-capture-refresh-field > .charity-hint { margin-bottom:0; }
+.charity-capture-refresh-actions.charity-modal-footer { position:static; }
+@media (max-width:600px) {
+  .charity-capture-refresh-values { grid-template-columns:minmax(0,1fr); gap:var(--size-4-3); }
+  .charity-capture-refresh-field { padding:var(--size-4-2); }
+  .charity-capture-refresh-actions > .mod-cta { flex-basis:100%; }
+}
+
+/* Android's WebView can overlay the keyboard without resizing its viewport.
+   Use Obsidian's native insets only for this plugin's input dialogs. */
+.is-mobile.is-android .modal-container:has(> .modal:is(.charity-visit-modal, .charity-contact-modal, .charity-capture-modal, .charity-outing-modal, .charity-outing-visit-modal, .charity-attach-modal, .charity-change-area-modal, .charity-capture-refresh-modal, .charity-outing-route-modal, .charity-clipper-modal, .charity-copy-modal)) {
+  --charity-modal-top:var(--safe-area-inset-top,env(safe-area-inset-top,0px));
+  --charity-modal-bottom:max(var(--keyboard-height,0px),var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)));
+  box-sizing:border-box;
+  padding-top:var(--charity-modal-top);
+  padding-bottom:var(--charity-modal-bottom);
+}
+.is-mobile.is-android .modal:is(.charity-visit-modal, .charity-contact-modal, .charity-capture-modal, .charity-outing-modal, .charity-outing-visit-modal, .charity-attach-modal, .charity-change-area-modal, .charity-capture-refresh-modal, .charity-outing-route-modal, .charity-clipper-modal, .charity-copy-modal) {
+  max-height:calc(100vh - var(--charity-modal-top,0px) - var(--charity-modal-bottom,0px) - var(--size-4-4));
+  max-height:calc(100dvh - var(--charity-modal-top,0px) - var(--charity-modal-bottom,0px) - var(--size-4-4));
+}
+.is-mobile.is-android .modal:is(.charity-visit-modal, .charity-contact-modal, .charity-capture-modal, .charity-outing-modal, .charity-outing-visit-modal, .charity-attach-modal, .charity-change-area-modal, .charity-capture-refresh-modal, .charity-outing-route-modal, .charity-clipper-modal, .charity-copy-modal) > .modal-content {
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+}
+
+/* Example controls follow the current Obsidian theme and remain touch-sized. */
+.charity-examples-modal button { min-height:44px; max-width:100%; height:auto; white-space:normal; }
+.charity-examples-modal p, .charity-examples-banner { overflow-wrap:anywhere; }
+.charity-examples-banner strong { display:block; }
+.charity-examples-banner p:last-child { margin-bottom:0; }
+
+/* Journey planning follows native Obsidian form and theme controls. */
+.charity-outing-planner-modal { width:min(860px,94vw); }
+.charity-outing-planner-modal .modal-content { min-height:0; overflow-y:auto; overflow-x:hidden; }
+.charity-outing-planner-modal :is(p,strong,h3,li,summary) { overflow-wrap:anywhere; }
+.charity-outing-planner-modal .setting-item { flex-direction:column; align-items:stretch; gap:var(--size-4-2); }
+.charity-outing-planner-modal .setting-item-info,
+.charity-outing-planner-modal .setting-item-control { min-width:0; width:100%; }
+.charity-outing-planner-modal .setting-item-control { justify-content:flex-start; }
+.charity-outing-planner-modal :is(input,select,textarea) { box-sizing:border-box; width:100%; max-width:100%; min-height:44px; }
+.charity-outing-planner-modal :is(button,summary) { min-height:44px; height:auto; max-width:100%; white-space:normal; }
+.charity-outing-planner-modal button { padding:var(--size-4-2) var(--size-4-3); }
+.charity-outing-planner-modal .charity-actions { display:flex; gap:var(--size-4-2); flex-wrap:wrap; margin-block:var(--size-4-3); }
+.charity-outing-planner-modal .charity-modal-footer > button { flex:1 1 100%; }
+.charity-planner-status:not(:empty) { margin-block:var(--size-4-3); padding:var(--size-4-3); border:1px solid var(--background-modifier-border); border-radius:var(--radius-m); }
+.charity-planner-comparison { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--size-4-3); }
+.charity-planner-comparison > div { padding:var(--size-4-3); background:var(--background-secondary); border-radius:var(--radius-m); }
+.charity-planner-comparison p { margin-bottom:0; }
+.charity-planner-timeline { padding-inline-start:var(--size-4-5); }
+.charity-planner-timeline > li { margin-block:var(--size-4-3); }
+.charity-planner-timeline p { margin-block:var(--size-4-1); }
+.charity-planner-map-picker .charity-map { height:min(400px,55vh) !important; }
+@media (min-width:600px) {
+  .charity-outing-planner-modal .setting-item { flex-direction:row; gap:var(--size-4-4); align-items:flex-start; }
+  .charity-outing-planner-modal .setting-item-info { flex:1; }
+  .charity-outing-planner-modal .setting-item-control { flex:1; }
+  .charity-outing-planner-modal .charity-modal-footer > button { flex:0 1 auto; }
+  .charity-planner-comparison { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+.is-mobile.is-android .modal-container:has(> .charity-outing-planner-modal) {
+  --charity-modal-top:var(--safe-area-inset-top,env(safe-area-inset-top,0px));
+  --charity-modal-bottom:max(var(--keyboard-height,0px),var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)));
+  box-sizing:border-box;
+  padding-top:var(--charity-modal-top);
+  padding-bottom:var(--charity-modal-bottom);
+}
+.is-mobile.is-android .charity-outing-planner-modal {
+  max-height:calc(100vh - var(--charity-modal-top,0px) - var(--charity-modal-bottom,0px) - var(--size-4-4));
+  max-height:calc(100dvh - var(--charity-modal-top,0px) - var(--charity-modal-bottom,0px) - var(--size-4-4));
+}
+.is-mobile.is-android .charity-outing-planner-modal > .modal-content { overscroll-behavior:contain; }
+
+/* Structured visit fields stay ordinary-width and use the current Obsidian theme. */
+.charity-structured-visit-modal { width:min(760px,94vw); }
+.charity-structured-visit-modal .modal-content { min-height:0; overflow-y:auto; overflow-x:hidden; }
+.charity-structured-visit-fields :is(input,textarea,select) { box-sizing:border-box; max-width:100%; }
+.charity-structured-visit-fields .setting-item-info,
+.charity-structured-visit-fields .setting-item-control { min-width:0; }
+.charity-structured-visit-fields .charity-visit-no-haul { margin-block:var(--size-4-2); }
+.charity-structured-visit-modal .charity-actions,
+.charity-visit-recovery .charity-actions { display:flex; flex-wrap:wrap; gap:var(--size-4-2); }
+.charity-structured-visit-modal :is(button,select,input),
+.charity-visit-history-row button,
+.charity-structured-visit button,
+.charity-visit-recovery button { min-height:44px; }
+.charity-structured-visit-modal button,
+.charity-visit-history-row button,
+.charity-structured-visit button,
+.charity-visit-recovery button { height:auto; max-width:100%; white-space:normal; padding:var(--size-4-2) var(--size-4-3); }
+.charity-visit-history-row,
+.charity-visit-recovery { margin-block:var(--size-4-3); padding:var(--size-4-3); border:1px solid var(--background-modifier-border); border-radius:var(--radius-m); }
+.charity-visit-summary { color:var(--text-muted); overflow-wrap:anywhere; margin-block:var(--size-4-2); }
+.charity-visit-text { white-space:pre-wrap; overflow-wrap:anywhere; }
+.charity-structured-visit-modal .charity-modal-footer > :is(button,.charity-save-status) { flex-basis:100%; }
+@media (max-width:600px) {
+  .charity-structured-visit-fields .setting-item { flex-direction:column; align-items:stretch; gap:var(--size-4-2); }
+  .charity-structured-visit-fields .setting-item-control { width:100%; justify-content:flex-start; }
+  .charity-structured-visit-fields :is(input,textarea,select) { width:100%; min-height:44px; }
+}
+
+/* Calm everyday controls inherit the vault theme. */
+.charity-sourcing { --charity-touch-target: max(44px, 2.75rem); }
+.charity-home { max-inline-size: 64ch; margin-inline: auto; }
+.charity-home h1 { margin-block: var(--size-4-4) var(--size-4-6); }
+.charity-home h2 { margin-block: 0 var(--size-4-3); }
+.charity-home p { margin-block: var(--size-4-2); }
+.charity-home button, .charity-notebook-nav button,
+.charity-visit-periods button, .charity-visit-history-row button,
+.charity-visits-hub button { min-block-size: var(--charity-touch-target, 44px); white-space: normal; }
+.charity-home-resume {
+  padding: var(--size-4-5); margin-block-end: var(--size-4-6);
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--radius-m); background: var(--background-secondary);
+}
+.charity-home-resume > button { margin-block-start: var(--size-4-3); }
+.charity-home-tasks { display: grid; gap: var(--size-4-4); margin-block: var(--size-4-5); }
+.charity-home-task { display: grid; gap: var(--size-4-1); }
+.charity-home-task > button { justify-self: start; }
+.charity-home-secondary { margin-block: var(--size-4-5) !important; }
+.charity-home .charity-details { border: var(--border-width) solid var(--background-modifier-border); border-radius: var(--radius-m); padding: var(--size-4-3); }
+.charity-home .charity-details > summary { padding: var(--size-4-2); min-block-size: var(--charity-touch-target); box-sizing: border-box; }
+.charity-home-saved-row { padding-block: var(--size-4-3); }
+.charity-home-warning { margin-block-start: var(--size-4-4); overflow-wrap: anywhere; }
+.charity-notebook-nav { margin-block-end: var(--size-4-3); }
+.charity-notebook-nav > button { font-size: var(--font-ui-small); }
+.charity-visit-history-row { padding-block: var(--size-4-3); overflow-wrap: anywhere; }
+.charity-visit-history-row h3 { margin-block: 0 var(--size-4-2); }
+.charity-visit-history-filters, .charity-visit-periods, .charity-visits-tabs { display: flex; flex-wrap: wrap; gap: var(--size-4-2); margin-block: var(--size-4-3); }
+.charity-visit-history input { max-inline-size: 100%; min-block-size: var(--charity-touch-target, 44px); box-sizing: border-box; }
+.charity-structured-visit-modal .charity-details, .charity-outing-visit-modal .charity-details { padding: var(--size-4-3); border: var(--border-width) solid var(--background-modifier-border); border-radius: var(--radius-m); }
+.charity-structured-visit-modal .charity-details > summary, .charity-outing-visit-modal .charity-details > summary { min-block-size: max(44px, 2.75rem); box-sizing: border-box; }
+.charity-structured-visit-fields textarea { min-block-size: 6em; }
+.charity-home button:focus-visible, .charity-notebook-nav button:focus-visible, .charity-visits-hub button:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+@media (min-width: 40rem) {
+  .charity-home-task { grid-template-columns: minmax(10rem, 1fr) 3fr; align-items: center; gap: var(--size-4-4); }
+  .charity-home-task > button { inline-size: 100%; }
+}
+
+.charity-structured-visit-modal .charity-modal-footer,
+.charity-outing-visit-modal .charity-modal-footer {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--size-4-2); align-items: stretch;
+}
+.charity-structured-visit-modal .charity-modal-footer > .charity-save-status,
+.charity-outing-visit-modal .charity-modal-footer > .charity-outing-draft-status,
+.charity-structured-visit-modal .charity-modal-footer > button.mod-cta { grid-column: 1 / -1; }
+.charity-structured-visit-modal .charity-modal-footer > button,
+.charity-outing-visit-modal .charity-modal-footer > button {
+  inline-size: 100%; min-inline-size: 0; min-block-size: max(44px, 2.75rem);
+  white-space: normal; margin: 0;
+}
+.workspace-leaf-content[data-type="reseller-sourcing-workspace"] .view-content { padding: 0; overflow: hidden; }
+.charity-workspace { height: 100%; display: grid; grid-template-columns: 116px minmax(0,1fr); color: var(--text-normal); background: var(--background-primary); }
+.charity-workspace-nav { display: flex; flex-direction: column; gap: 8px; padding: 20px 8px; background: var(--background-secondary); border-right: 1px solid var(--background-modifier-border); }
+.charity-workspace button { min-height: 40px; white-space: normal; height: auto; }
+.charity-workspace-nav button { justify-content: flex-start; box-shadow: none; background: transparent; }
+.charity-workspace-nav button.is-current { background: var(--background-modifier-hover); color: var(--text-accent); font-weight: 600; }
+.charity-workspace-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.charity-workspace-header { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 20px; border-bottom: 1px solid var(--background-modifier-border); }
+.charity-workspace-context { flex: 1; color: var(--text-muted); font-size: var(--font-small); }
+.charity-workspace-body { overflow: auto; flex: 1; padding: 24px clamp(16px,4vw,40px) 48px; scroll-padding: 20px; }
+.charity-workspace-body > h1 { margin: 0 0 12px; font-size: 1.6em; }
+.charity-workspace-body > p { margin: 8px 0 16px; }
+.charity-workspace-body details { margin: 16px 0; }
+.charity-workspace-body summary { padding: 10px 0; cursor: pointer; }
+.charity-workspace-body > input[type="search"], .charity-preparation-modal input[type="search"] { width: 100%; min-height: 44px; margin: 12px 0; }
+.charity-workspace-lead { max-width: 680px; padding: 20px 24px; margin: 24px 0; border: 1px solid var(--background-modifier-border); border-radius: 10px; background: var(--background-secondary); }
+.charity-workspace-lead p { margin: 0 0 16px; color: var(--text-muted); }
+.charity-workspace-lead button.mod-cta { min-height: 48px; padding: 12px 20px; margin-right: 12px; }
+.charity-workspace .setting-item { padding: 12px 4px; }
+.charity-workspace .setting-item-control { padding: 4px; }
+.charity-workspace .charity-actions, .charity-preparation-modal .charity-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.charity-source-choice { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 4px; border-bottom: 1px solid var(--background-modifier-border); }
+.charity-source-choice > div { min-width: 0; }
+.charity-source-choice p { margin: 4px 0; }
+.charity-place-name { font-weight: 600; box-shadow: none; background: transparent; padding: 4px 0; text-align: left; }
+.charity-compact-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; }
+.charity-compact-row > span:first-child { flex: 1; min-width: 160px; }
+.charity-workspace-note-link { margin-top: 32px; border-top: 1px solid var(--background-modifier-border); padding-top: 16px; }
+.charity-workspace-warning { padding: 8px 12px; border-left: 3px solid var(--text-warning); margin: 16px 0; }
+.charity-preparation-modal { width: min(820px,94vw); }
+.charity-preparation-steps { display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--text-muted); font-size: var(--font-small); margin: 0 0 20px; }
+.charity-preparation-steps .is-current { color: var(--text-normal); font-weight: 600; }
+.charity-preparation-selected { padding: 12px 16px; background: var(--background-secondary); border-radius: 8px; margin: 12px 0; }
+.charity-preparation-candidates { max-height: 40vh; overflow: auto; margin: 12px 0; }
+.charity-preparation-modal .charity-modal-footer { position: sticky; bottom: 0; background: var(--background-primary); border-top: 1px solid var(--background-modifier-border); padding: 12px 0; z-index: 2; }
+.charity-preparation-modal button { min-height: 44px; }
+.charity-save-status { flex-basis: 100%; color: var(--text-muted); min-height: 1.4em; }
+.charity-draft-copy { width: 100%; min-height: 160px; }
+.charity-practice-label { font-size: var(--font-small); color: var(--text-muted); }
+.charity-workspace :is(button,input,textarea,select,summary):focus-visible, .charity-preparation-modal :is(button,input,textarea,select,summary):focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 3px; }
+@media (max-width: 600px) {
+  .charity-workspace.is-mobile { height: calc(100% - var(--charity-mobile-obstruction, 0px)); }
+  .charity-workspace { grid-template-columns: 1fr; grid-template-rows: minmax(0,1fr) auto; }
+  .charity-workspace-nav { grid-row: 2; flex-direction: row; padding: 4px 4px max(4px,env(safe-area-inset-bottom)); gap: 2px; border-right: 0; border-top: 1px solid var(--background-modifier-border); }
+  .charity-workspace-nav button { flex: 1; justify-content: center; min-height: 48px; padding: 8px 4px; font-size: 13px; }
+  .charity-workspace-header { padding: 8px 12px; gap: 8px; }
+  .charity-workspace-body { padding: 20px 16px 32px; }
+  .charity-workspace button { min-height: 44px; }
+  .charity-workspace-lead { padding: 16px; margin: 20px 0; }
+  .charity-workspace-lead button.mod-cta { display: block; width: 100%; margin: 0 0 8px; }
+  .charity-preparation-modal .setting-item { flex-wrap: wrap; gap: 8px; }
+  .charity-preparation-modal .setting-item-control { width: 100%; justify-content: flex-start; }
+  .charity-preparation-modal .setting-item-control input { width: 100%; }
+  .charity-preparation-candidates { max-height: 32vh; }
+  .charity-workspace .charity-place-map { height: min(60vh,520px); }
+}

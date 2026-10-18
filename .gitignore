@@ -1,0 +1,29 @@
+node_modules/
+main.js
+main.js.map
+styles.css
+dist/
+.runtime-tests/
+.cache/
+test-vault*/
+upstream/
+
+# Local vaults, captures, evidence and developer configuration are never source.
+.obsidian/
+.trash/
+.codex/
+.agents/
+.env
+.env.*
+!.env.example
+*.log
+*.zip
+*.apk
+*.bak
+*.backup
+
+# Only the portable build/package helpers are part of the public project.
+scripts/*
+!scripts/package.mjs
+!scripts/legal-notices.mjs
+src/map/adapt-upstream.mjs

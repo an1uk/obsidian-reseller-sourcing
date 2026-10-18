@@ -1,0 +1,38 @@
+{
+  "name": "charity-sourcing",
+  "version": "0.11.0",
+  "private": true,
+  "description": "Local reseller sourcing notebook for Obsidian",
+  "license": "MIT",
+  "author": "an1uk",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/an1uk/obsidian-reseller-sourcing.git"
+  },
+  "homepage": "https://github.com/an1uk/obsidian-reseller-sourcing",
+  "bugs": {
+    "url": "https://github.com/an1uk/obsidian-reseller-sourcing/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "build": "npm run check && node esbuild.config.mjs",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "package": "npm run build && node scripts/package.mjs"
+  },
+  "dependencies": {
+    "@mapbox/mapbox-gl-rtl-text": "0.3.0",
+    "maplibre-gl": "6.14.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.6.1",
+    "esbuild": "0.25.10",
+    "obsidian": "https://codeload.github.com/obsidianmd/obsidian-api/tar.gz/9abd9605ce081383674aae1ed111c456edde0688",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "yaml": "2.9.1"
+  }
+}

@@ -1,0 +1,35 @@
+import type { Coordinates, PlaceRecord } from '../types';
+
+export const MAP_VIEW_TYPE = 'charity-sourcing-map';
+export const LOCALITY_HEIGHT = 680;
+export const PLACE_HEIGHT = 400;
+export const PLACE_ZOOM = 16;
+export const LOCALITY_MAX_ZOOM = 15;
+
+export function validCoordinates(value: unknown): value is Coordinates {
+  return Array.isArray(value) && value.length === 2 && value.every(v => typeof v === 'number' && Number.isFinite(v))
+    && Math.abs(value[0]) <= 90 && Math.abs(value[1]) <= 180;
+}
+export function mapCoordinates([lat, lng]: Coordinates): [number, number] { return [lng, lat]; }
+export function fitOptions(mobile: boolean) { return { padding: mobile ? 32 : 64, maxZoom: LOCALITY_MAX_ZOOM, duration: 0 }; }
+export function ratingColour(rating: unknown): string {
+  const n = typeof rating === 'number' ? rating : Number(rating);
+  return !Number.isFinite(n) || n <= 0 || n > 5 || !Number.isInteger(n * 2) ? '#2563eb' : n < 2 ? '#dc2626' : n < 4 ? '#d97706' : '#16a34a';
+}
+export function isWithinRoot(path: string, root: string): boolean { return path.startsWith(root.replace(/\/+$/, '') + '/'); }
+export function visiblePlaces(records: PlaceRecord[], root: string): PlaceRecord[] {
+  return records.filter(r => isWithinRoot(r.path, root) && validCoordinates(r.coordinates)
+    && (r.kind !== 'shop' || r.properties.shop_closed !== true));
+}
+
+/** Camera changes from the user pause data-driven fitting, but never remove pins. */
+export class FitPolicy {
+  automatic = true;
+  userMoved(): void { this.automatic = false; }
+  resume(): void { this.automatic = true; }
+}
+
+/** Nested practice notebooks are a separate ownership domain. */
+export function hostOwnsPath(host: { settings: { root: string }; ownsPath?: (path: string) => boolean }, path: string): boolean {
+  return host.ownsPath ? host.ownsPath(path) : isWithinRoot(path, host.settings.root);
+}

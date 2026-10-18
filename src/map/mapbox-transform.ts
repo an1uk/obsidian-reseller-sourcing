@@ -1,0 +1,159 @@
+// Adapted from Obsidian Maps 0.2.2 (8703e98013fa20fb188746d24664452f41b17227).
+// Copyright (c) 2025 Obsidian. MIT licence: licenses/obsidian-maps-MIT.txt.
+import { StyleSpecification } from 'maplibre-gl';
+
+/**
+ * Checks if a URL uses the mapbox:// protocol
+ */
+export function isMapboxURL(url: string): boolean {
+	return url.indexOf('mapbox:') === 0;
+}
+
+/**
+ * Transforms a Mapbox style to work with MapLibre GL JS
+ */
+export function transformMapboxStyle(style: StyleSpecification, accessToken: string): StyleSpecification {
+	// Remove unsupported projection.name property
+	if (style.projection && 'name' in style.projection) {
+		delete (style.projection as { name?: unknown }).name;
+	}
+
+	// Transform sources. Only some source types carry a url, so narrow to that.
+	if (style.sources) {
+		for (const sourceId in style.sources) {
+			const source = style.sources[sourceId] as { url?: string };
+			if (source.url && isMapboxURL(source.url)) {
+				source.url = transformMapboxUrl(source.url, 'Source', accessToken) ?? source.url;
+			}
+		}
+	}
+
+	// Transform sprite URLs
+	if (style.sprite && typeof style.sprite === 'string' && isMapboxURL(style.sprite)) {
+		style.sprite = transformMapboxUrl(style.sprite, 'Sprite', accessToken) ?? style.sprite;
+	}
+
+	// Transform glyphs URLs
+	if (style.glyphs && isMapboxURL(style.glyphs)) {
+		style.glyphs = transformMapboxUrl(style.glyphs, 'Glyphs', accessToken) ?? style.glyphs;
+	}
+
+	return style;
+}
+
+/**
+ * Transforms a Mapbox URL to an HTTPS URL
+ */
+function transformMapboxUrl(url: string, resourceType: string, accessToken: string): string | undefined {
+	if (url.indexOf('/styles/') > -1 && url.indexOf('/sprite') === -1) {
+		return normalizeStyleURL(url, accessToken);
+	}
+	if (url.indexOf('/sprites/') > -1) {
+		return normalizeSpriteURL(url, accessToken);
+	}
+	if (url.indexOf('/fonts/') > -1) {
+		return normalizeGlyphsURL(url, accessToken);
+	}
+	if (url.indexOf('/v4/') > -1 || resourceType === 'Source') {
+		return normalizeSourceURL(url, accessToken);
+	}
+	return undefined;
+}
+
+/**
+ * Parses a mapbox:// URL into its components
+ */
+function parseUrl(url: string): { protocol: string; authority: string; path: string; params: string[] } {
+	const urlRe = /^(\w+):\/\/([^/?]*)(\/[^?]+)?\??(.+)?/;
+	const parts = url.match(urlRe);
+	if (!parts) {
+		throw new Error('Unable to parse URL object');
+	}
+	return {
+		protocol: parts[1],
+		authority: parts[2],
+		path: parts[3] || '/',
+		params: parts[4] ? parts[4].split('&') : []
+	};
+}
+
+/**
+ * Formats a URL object with the Mapbox API endpoint and access token
+ */
+function formatUrl(urlObject: { protocol: string; authority: string; path: string; params: string[] }, accessToken: string): string {
+	const apiUrlObject = parseUrl("https://api.mapbox.com");
+	urlObject.protocol = apiUrlObject.protocol;
+	urlObject.authority = apiUrlObject.authority;
+	urlObject.params.push(`access_token=${accessToken}`);
+	const params = urlObject.params.length ? `?${urlObject.params.join('&')}` : '';
+	return `${urlObject.protocol}://${urlObject.authority}${urlObject.path}${params}`;
+}
+
+/**
+ * Normalizes a Mapbox style URL
+ */
+function normalizeStyleURL(url: string, accessToken: string): string {
+	const urlObject = parseUrl(url);
+	urlObject.path = `/styles/v1${urlObject.path}`;
+	return formatUrl(urlObject, accessToken);
+}
+
+/**
+ * Normalizes a Mapbox glyphs/fonts URL
+ */
+function normalizeGlyphsURL(url: string, accessToken: string): string {
+	const urlObject = parseUrl(url);
+	urlObject.path = `/fonts/v1${urlObject.path}`;
+	return formatUrl(urlObject, accessToken);
+}
+
+/**
+ * Normalizes a Mapbox source/tileset URL
+ */
+function normalizeSourceURL(url: string, accessToken: string): string {
+	const urlObject = parseUrl(url);
+	urlObject.path = `/v4/${urlObject.authority}.json`;
+	urlObject.params.push('secure');
+	return formatUrl(urlObject, accessToken);
+}
+
+/**
+ * Normalizes a Mapbox sprite URL
+ * Handles retina (@2x) sprites
+ */
+function normalizeSpriteURL(url: string, accessToken: string): string {
+	const urlObject = parseUrl(url);
+
+	// Parse the path to extract username and style_id
+	// Format: /username/style_id/draft_token or /username/style_id
+	const pathParts = urlObject.path.split('/').filter(part => part.length > 0);
+
+	// Only use username and style_id (first two parts), ignore draft/version tokens
+	const username = pathParts[0];
+	const styleId = pathParts[1];
+
+	if (!username || !styleId) {
+		// Fallback to old behavior if path format is unexpected
+		const path = urlObject.path.split('.');
+		let properPath = path[0];
+		const extension = path[1] || 'json';
+		let format = '';
+
+		if (properPath.indexOf('@2x') > -1) {
+			properPath = properPath.split('@2x')[0];
+			format = '@2x';
+		}
+		urlObject.path = `/styles/v1${properPath}/sprite${format}.${extension}`;
+		return formatUrl(urlObject, accessToken);
+	}
+
+	// Check for @2x format in the original URL
+	let format = '';
+	if (url.indexOf('@2x') > -1) {
+		format = '@2x';
+	}
+
+	// Construct proper Mapbox sprite URL
+	urlObject.path = `/styles/v1/${username}/${styleId}/sprite${format}`;
+	return formatUrl(urlObject, accessToken);
+}
