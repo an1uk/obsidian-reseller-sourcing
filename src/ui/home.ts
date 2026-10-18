@@ -1,7 +1,8 @@
+import { markInputModal } from './modal-layout';
 import { Component, Modal, TFile } from 'obsidian';
 import type { NotebookContext } from '../notebook-context';
 import { inspectHome, type ResumeItem } from '../home/overview';
-import { button, details, errorText, pickPlace, renderContextBanner, renderExamplesEntry, SetupModal, VisitModal } from '../ui';
+import { button, details, errorText, pickPlace, renderContextBanner, renderExamplesEntry, SetupModal, VisitModal, propertyText } from '../ui';
 import { OutingVisitModal } from './outings';
 import { renderRecoveryOperation } from './visits';
 
@@ -14,7 +15,7 @@ async function currentItem(context: NotebookContext, item: ResumeItem): Promise<
 class ReviewVisitSaveModal extends Modal {
   private closed = false;
   constructor(private context: NotebookContext, private item: ResumeItem) { super(context.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     this.titleEl.setText('Review interrupted visit save'); this.modalEl.addClass('charity-visit-modal');
     void (async () => {
       const item = await currentItem(this.context, this.item);
@@ -50,9 +51,9 @@ function savedWork(context: NotebookContext, parent: HTMLElement, item: ResumeIt
 export async function chooseVisitSource(context: NotebookContext): Promise<void> {
   const overview = await inspectHome(context), active = overview.outings.find(outing => outing.status === 'active');
   if (!overview.sourcesAvailable) throw Error('Sources could not be read. Open Home to review the saved-record warning.');
-  const sources = overview.sources.slice().sort((a, b) => String(b.properties.last_visited ?? '').localeCompare(String(a.properties.last_visited ?? '')) || a.name.localeCompare(b.name));
+  const sources = overview.sources.slice().sort((a, b) => propertyText(b.properties.last_visited).localeCompare(propertyText(a.properties.last_visited)) || a.name.localeCompare(b.name));
   class ChooseVisitModal extends Modal {
-    onOpen(): void {
+    onOpen(): void { markInputModal(this);
       this.titleEl.setText('Record a visit'); this.modalEl.addClass('charity-visit-modal'); renderContextBanner(context, this.contentEl);
       if (active) {
         const outing = this.contentEl.createDiv('charity-home-saved-row');

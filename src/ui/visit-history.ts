@@ -49,7 +49,7 @@ export async function renderVisitsHub(context: NotebookContext, owner: Component
     }
     body.empty();
     if (state.view === 'insights') {
-      await renderVisitInsights(context, owner, body, state.insights!, () => isCurrent() && generation === currentView);
+      await renderVisitInsights(context, owner, body, state.insights, () => isCurrent() && generation === currentView);
       return;
     }
     body.createEl('p', { text: 'Your recorded visits, newest first.', cls: 'charity-hint' });

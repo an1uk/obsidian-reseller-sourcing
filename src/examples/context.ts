@@ -2,12 +2,13 @@ import type { Coordinates, PlaceKind } from '../types';
 import type { NotebookContext, NotebookUiHost } from '../notebook-context';
 import type { ExamplesSession } from './state';
 import type { MapHost } from '../map';
-import { CaptureModal, LocalityModal, VisitModal, manualDraft } from '../ui';
+import { LocalityModal, manualDraft } from '../ui';
 import { NewOutingModal } from '../ui/outings';
 import { Notice, TFile } from 'obsidian';
 import { showSelectableText } from '../platform/clipboard';
 import { openSourcingWorkspace, routeForPath } from '../workspace/view';
 import { PlacePreparationModal } from '../workspace/place-preparation';
+import { hasControlCharacters } from '../domain/guards';
 
 export interface ContextServices extends NotebookUiHost {
   beginEditing(): (() => void) | undefined;
@@ -60,8 +61,8 @@ export class ExamplesContext implements NotebookContext {
     this.session.assertCurrent();
     const route = routeForPath(this.root, path); if (route) return openSourcingWorkspace(this.host, this, route);
     const hash = path.indexOf('#'), filePath = hash < 0 ? path : path.slice(0, hash), fragment = hash < 0 ? '' : path.slice(hash + 1);
-    if (!filePath.startsWith(this.root + '/') || /[\\\x00-\x1f]/.test(filePath) || filePath.split('/').some(part => !part || part === '..' || part === '.') ||
-        /[\x00-\x1f]/.test(fragment)) throw new Error('Choose a note inside Examples.');
+    if (!filePath.startsWith(this.root + '/') || filePath.includes('\\') || hasControlCharacters(filePath, false) || filePath.split('/').some(part => !part || part === '..' || part === '.') ||
+        hasControlCharacters(fragment, false)) throw new Error('Choose a note inside Examples.');
     const file = this.app.vault.getAbstractFileByPath(filePath);
     if (!(file instanceof TFile)) throw new Error('This example note no longer exists. It will not be recreated automatically.');
     if (fragment) await this.app.workspace.openLinkText(file.path + '#' + fragment, this.root + '/Home.md', false);

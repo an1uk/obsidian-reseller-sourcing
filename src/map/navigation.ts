@@ -17,15 +17,16 @@ export function placeNavigation(place: PlaceRecord, allPlaces: PlaceRecord[]) {
 
 export function appendNavigation(container: HTMLElement, place: PlaceRecord, allPlaces: PlaceRecord[], host?: MapHost): void {
   const navigation = placeNavigation(place,allPlaces);
+  const report = host?.reportError ? (error: unknown) => host.reportError?.(error) : undefined;
   const actions = container.createDiv('charity-popup-links');
   const link = (name:string, url:string, parent:HTMLElement = actions) => {
     if (!url) return;
     if (host?.mode === 'examples') {
       const control = parent.createEl('button', {text:'Preview ' + name});
-      control.addEventListener('click', () => { runMapAction(()=>host.openExternal?.(url,name),host.reportError); });
+      control.addEventListener('click', () => { runMapAction(()=>host.openExternal?.(url,name), report); });
     } else {
       const anchor = parent.createEl('a',{text:name,href:url,attr:{target:'_blank',rel:'noopener noreferrer'}});
-      if (host?.openExternal) for (const event of ['click','auxclick']) anchor.addEventListener(event, e => { e.preventDefault(); runMapAction(()=>host.openExternal?.(url,name),host.reportError); });
+      if (host?.openExternal) for (const event of ['click','auxclick']) anchor.addEventListener(event, e => { e.preventDefault(); runMapAction(()=>host.openExternal?.(url,name),report); });
     }
   };
   link('Google Maps',navigation.listing); link('Drive here',navigation.drive); link('Walk here',navigation.walk);

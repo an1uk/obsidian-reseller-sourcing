@@ -70,7 +70,7 @@ export function addressParts(address: string): { street: string; postcode: strin
   const postcode = last.match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i)?.[0].toUpperCase().replace(/\s*(\d[A-Z]{2})$/, ' $1') ?? '';
   const postalTown = postcode ? last.replace(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i, '').trim() : '';
   const road = /\b(street|st|road|rd|lane|ln|avenue|ave|drive|dr|way|close|crescent|cres|terrace|place|pl|square|sq|hill|walk|row|grove|gardens|gdns|court|ct|parade|oval|mews|rise|gate|gates|bank|brae|view|green|park|passage|yard|quay|embankment)\.?$/i;
-  const street = parts.slice(0, -1).find(p => road.test(p)) ?? (parts.length > 1 ? parts[0]! : '');
+  const street = parts.slice(0, -1).find(p => road.test(p)) ?? (parts.length > 1 ? parts[0] : '');
   return { street, postcode, postalTown };
 }
 export function extractBrandTag(name: string, address: string, locality = ''): string {

@@ -6,7 +6,7 @@ const normalColour = (value: string): string => value.trim().replace(/\s+/g, ' '
 const median = (values: number[]): number | null => {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b), mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 };
 export interface WeekdaySummary {
   day: number; label: string; visits: number; knownCounts: number; itemsTotal: number;
@@ -52,7 +52,7 @@ export function colourInsights(visits: readonly VisitRecord[], includeSuspected 
       for (const visit of sameDay) timeline.push({ sourcePath, visitPath: visit.path, visitDate: date, colour: visit.stockColour!.trim(),
         evidence: visit.colourEvidence ?? 'unknown', conflicting: conflict, eligible: !conflict && eligible.includes(visit) });
       if (conflict || !eligible.length) continue;
-      const representative = eligible.find(v => v.colourEvidence === 'confirmed') ?? eligible[0]!;
+      const representative = eligible.find(v => v.colourEvidence === 'confirmed') ?? eligible[0];
       const colour = normalColour(representative.stockColour!);
       if (sequence.at(-1)?.colour === colour) continue; // Unchanged sightings are one observed run.
       sequence.push({ date, colour, label: representative.stockColour!.trim(), suspected: representative.colourEvidence !== 'confirmed' });
@@ -60,9 +60,9 @@ export function colourInsights(visits: readonly VisitRecord[], includeSuspected 
     for (const colour of [...new Set(sequence.map(row => row.colour))]) {
       const occurrences = sequence.filter(row => row.colour === colour);
       if (occurrences.length < 3) continue; // Two returns, each with another colour between.
-      const gaps = occurrences.slice(1).map((row, i) => serialDay(row.date) - serialDay(occurrences[i]!.date));
+      const gaps = occurrences.slice(1).map((row, i) => serialDay(row.date) - serialDay(occurrences[i].date));
       if (gaps.some(gap => !Number.isFinite(gap) || gap <= 0)) continue;
-      hints.push({ sourcePath, colour: occurrences[0]!.label, returns: gaps.length,
+      hints.push({ sourcePath, colour: occurrences[0].label, returns: gaps.length,
         minimumDays: Math.min(...gaps), maximumDays: Math.max(...gaps), medianDays: median(gaps)!,
         supportingDates: occurrences.map(row => row.date), includesSuspected: sequence.some(row => row.suspected) });
     }

@@ -1,11 +1,12 @@
 import { isMap, parse, parseDocument, stringify } from 'yaml';
 import type { VisitInput } from '../types';
+import { isRecord, propertyText } from '../domain/guards';
 
 export function readNote(text: string): { properties: Record<string, unknown>; body: string } {
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
   if (!match) return { properties: {}, body: text };
-  const properties = parse(match[1]);
-  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) throw new Error('Invalid note properties.');
+  const properties: unknown = parse(match[1]);
+  if (!isRecord(properties)) throw new Error('Invalid note properties.');
   return { properties, body: text.slice(match[0].length) };
 }
 export function writeNote(properties: Record<string, unknown>, body: string): string {
@@ -13,7 +14,7 @@ export function writeNote(properties: Record<string, unknown>, body: string): st
 }
 export function wiki(path: string): string { return '[[' + path.replace(/\.md$/, '') + ']]'; }
 export function linkPath(value: unknown): string {
-  const raw = String(value ?? '').trim();
+  const raw = propertyText(value).trim();
   const target = raw.startsWith('[[') && raw.endsWith(']]') ? raw.slice(2, -2).split('|')[0].split('#')[0] : raw;
   return target && !target.endsWith('.md') ? target + '.md' : target;
 }
@@ -48,7 +49,7 @@ export async function hashText(text: string): Promise<string> {
 export function updateNoteProperty(text: string, key: string, value: unknown): string {
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
   if (!match) throw new Error('The note has no properties section.');
-  const document = parseDocument(match[1]!);
+  const document = parseDocument(match[1]);
   if (document.errors.length || !isMap(document.contents)) throw new Error('Invalid note properties.');
   document.set(key, value);
   const newline = text.startsWith('---\r\n') ? '\r\n' : '\n';

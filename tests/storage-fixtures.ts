@@ -3,15 +3,22 @@ import { SourcingStore } from '../src/storage/store';
 import { DEFAULT_SETTINGS } from '../src/types';
 import type { CaptureDraft, Settings } from '../src/types';
 export class MemoryVault {
-  entries = new Map<string, { path: string; extension?: string; basename?: string; stat?: { ctime: number }; text?: string }>();
+  configDir = '.obsidian';
+  entries = new Map<string, { path: string; extension?: string; basename?: string; stat?: { ctime: number }; text?: string; children?: unknown[] }>();
   counter = 0; failRename = false; beforeProcess?: (path: string, text: string) => string;
   getName = () => 'Empty test vault';
-  getAbstractFileByPath = (path: string) => this.entries.get(path) ?? null;
+  getAbstractFileByPath = (path: string) => {
+    const entry = this.entries.get(path);
+    if (entry && entry.extension === undefined) entry.children = [...this.entries.values()].filter(child => child.path.slice(0, child.path.lastIndexOf('/')) === path).map(child => this.getAbstractFileByPath(child.path));
+    return entry ?? null;
+  };
   getFiles = () => [...this.entries.values()].filter(f => f.extension !== undefined) as TFile[];
   getMarkdownFiles = () => this.getFiles().filter(f => f.extension === 'md');
   async createFolder(path: string) { if (this.entries.has(path)) throw Error('Already exists'); this.entries.set(path, { path }); }
   async create(path: string, text: string) {
     if (this.entries.has(path)) throw Error('Already exists');
+    const parts = path.split('/');
+    for (let i = 1; i < parts.length; i++) { const parent = parts.slice(0, i).join('/'); if (!this.entries.has(parent)) this.entries.set(parent, { path: parent }); }
     const ext = path.split('.').at(-1)!;
     const file = { path, extension: ext, basename: path.split('/').at(-1)!.slice(0, -ext.length - 1), stat: { ctime: ++this.counter }, text };
     this.entries.set(path, file); return file as unknown as TFile;

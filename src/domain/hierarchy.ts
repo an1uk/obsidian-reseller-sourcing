@@ -26,7 +26,7 @@ export function resolveLocalities(input: LocalityInput[]): LocalityRecord[] {
   for (const entry of input) visit(entry);
   const records = [...resolved.values()].filter((value): value is LocalityRecord => !!value);
   const siblingKeys = records.map(record => (record.parentPath + '/' + record.name).toLocaleLowerCase());
-  return records.filter((_, i) => siblingKeys.indexOf(siblingKeys[i]!) === siblingKeys.lastIndexOf(siblingKeys[i]!))
+  return records.filter((_, i) => siblingKeys.indexOf(siblingKeys[i]) === siblingKeys.lastIndexOf(siblingKeys[i]))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 export function localitySubtree(path: string, localities: LocalityRecord[]): LocalityRecord[] {

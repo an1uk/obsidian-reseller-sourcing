@@ -8,10 +8,11 @@ import { StyleManager } from './style';
 import { CustomZoomControl } from './controls/zoom-control';
 import { CustomGeolocateControl } from './controls/geolocate-control';
 import { BackgroundSwitcherControl } from './controls/background-switcher';
-import { FitPolicy, fitOptions, LOCALITY_HEIGHT, PLACE_HEIGHT, PLACE_ZOOM, mapCoordinates, ratingColour, visiblePlaces, validCoordinates, hostOwnsPath } from './policy';
+import { FitPolicy, fitOptions, PLACE_ZOOM, mapCoordinates, ratingColour, visiblePlaces, validCoordinates, hostOwnsPath } from './policy';
 import { appendNavigation } from './navigation';
 import { initializeMapRuntime } from './runtime';
 import { copyTextOrShow } from '../platform/clipboard';
+import { MobileMapPopup } from './mobile-popup';
 
 export interface PlaceMapOptions {
   records: PlaceRecord[];
@@ -40,6 +41,7 @@ export class PlaceMap extends Component {
   private retryCamera: {center:[number,number];zoom:number} | null = null;
   private activeTileSet: string | undefined;
   private generation = 0;
+  private touchPopup: MobileMapPopup;
 
   constructor(container: HTMLElement, private host: MapHost, private options: PlaceMapOptions) {
     super();
@@ -48,8 +50,9 @@ export class PlaceMap extends Component {
     this.activeTileSet = host.settings.tileSets[0]?.id;
     this.root = container.createDiv('charity-map-container charity-place-map');
     if (Platform.isMobileApp) this.root.addClass('charity-map-mobile');
-    this.canvas = this.root.createDiv('charity-map');
-    this.canvas.style.height = `min(${options.locality ? LOCALITY_HEIGHT : PLACE_HEIGHT}px, 80vh)`;
+    this.canvas = this.root.createDiv('charity-map charity-place-map-canvas');
+    if (options.locality) this.root.addClass('charity-locality-map');
+    this.touchPopup = new MobileMapPopup(this.root);
     this.toolbar = this.root.createDiv('charity-map-actions');
     this.message = this.root.createDiv({cls:'charity-map-message', attr:{role:'status'}});
   }
@@ -102,7 +105,7 @@ export class PlaceMap extends Component {
       map.on('webglcontextlost', () => { if (this.map === map) this.showMapFailure(); });
       map.on('click', event => {
         if (!this.pickMode) return;
-        this.pick([event.lngLat.lat, event.lngLat.lng]);
+        runMapAction(() => this.pick([event.lngLat.lat, event.lngLat.lng]));
       });
       map.on('contextmenu', event => {
         event.preventDefault();
@@ -113,7 +116,8 @@ export class PlaceMap extends Component {
         else if (this.options.onPick) menu.addItem(item => item.setTitle('Use this location').setIcon('map-pin').onClick(() => this.options.onPick?.(coordinates)));
         else {
           menu.addItem(item => item.setTitle('Add parking here').setIcon('square-parking').onClick(() => { runMapAction(()=>this.host.openParking(coordinates, this.shopPath())); }));
-          if (this.options.focusPath) menu.addItem(item => item.setTitle('Move this place here…').setIcon('move').onClick(() => { runMapAction(()=>this.host.confirmMove(this.options.focusPath!, coordinates)); }));
+          const focusPath = this.options.focusPath;
+          if (focusPath) menu.addItem(item => item.setTitle('Move this place here…').setIcon('move').onClick(() => { runMapAction(()=>this.host.confirmMove(focusPath, coordinates)); }));
         }
         menu.showAtMouseEvent(event.originalEvent);
       });
@@ -138,6 +142,7 @@ export class PlaceMap extends Component {
     if (this.disposed) return;
     if (this.map) { const center = this.map.getCenter(); this.retryCamera = {center:[center.lng,center.lat],zoom:this.map.getZoom()}; }
     this.markers.forEach(marker => marker.remove()); this.popups.forEach(popup => popup.remove());
+    this.touchPopup.close(false);
     this.markers = []; this.popups = [];
     this.map?.remove(); this.map = null;
     void this.initialize();
@@ -188,14 +193,17 @@ export class PlaceMap extends Component {
     this.message.setText(mode ? `Tap the map to ${mode === 'parking' ? 'add parking' : mode === 'copy' ? 'copy coordinates' : 'choose the new location'}.` : '');
     this.makeActions();
   }
-  private pick(coordinates: Coordinates): void {
+  private async pick(coordinates: Coordinates): Promise<void> {
     const mode = this.pickMode;
     this.setPickMode(null);
-    try { this.host.assertCurrent?.(); } catch { return; }
+    try { await this.host.assertCurrent?.(); } catch { return; }
     if (mode === 'copy') { void this.copy(coordinates); return; }
     if (this.options.onPick) this.options.onPick(coordinates);
     else if (mode === 'parking') runMapAction(()=>this.host.openParking(coordinates, this.shopPath()));
-    else if (mode === 'move' && this.options.focusPath) runMapAction(()=>this.host.confirmMove(this.options.focusPath!, coordinates));
+    else if (mode === 'move' && this.options.focusPath) {
+      const focusPath = this.options.focusPath;
+      runMapAction(()=>this.host.confirmMove(focusPath, coordinates));
+    }
   }
 
   setRecords(records: PlaceRecord[]): void {
@@ -215,51 +223,60 @@ export class PlaceMap extends Component {
     const places = this.places();
     if (!this.map || !places.length) return;
     const bounds = new LngLatBounds();
-    places.forEach(p => bounds.extend(mapCoordinates(p.coordinates!)));
+    places.forEach(p => { if (validCoordinates(p.coordinates)) bounds.extend(mapCoordinates(p.coordinates)); });
     this.map.fitBounds(bounds, fitOptions(Platform.isMobile));
   }
 
   private renderMarkers(): void {
     this.markers.forEach(marker => marker.remove());
     this.popups.forEach(popup => popup.remove());
+    this.touchPopup.close(false);
     this.markers = []; this.popups = [];
     if (!this.map) return;
-    const doc = this.canvas.ownerDocument;
     for (const place of this.places()) {
-      const button = doc.createElement('button');
-      button.className = 'charity-place-marker';
-      button.setAttribute('aria-label', `${place.name}${place.kind === 'shop' ? ': ' + formatRating(place.properties.rating) : ': Parking'}`);
-      button.title = button.getAttribute('aria-label')!;
+      if (!validCoordinates(place.coordinates)) continue;
+      const button = createEl('button', {cls: 'charity-place-marker'});
+      const label = `${place.name}${place.kind === 'shop' ? ': ' + formatRating(place.properties.rating) : ': Parking'}`;
+      button.setAttribute('aria-label', label);
+      button.title = label;
       button.style.setProperty('--charity-marker-colour', place.kind === 'parking' ? '#7c3aed' : ratingColour(place.properties.rating));
       setIcon(button, place.kind === 'parking' ? 'square-parking' : 'store');
       if (place.kind === 'shop') {
         const score = button.createSpan('charity-marker-score');
-        score.textContent = String(place.properties.rating ?? 0);
+        score.textContent = typeof place.properties.rating === 'number' ? String(place.properties.rating) : '0';
       }
-      const popup = new Popup({offset:20, closeButton:true, maxWidth:'320px'}).setDOMContent(this.popup(place));
-      const marker = new Marker({element:button}).setLngLat(mapCoordinates(place.coordinates!)).setPopup(popup).addTo(this.map);
-      this.markers.push(marker); this.popups.push(popup);
+      const marker = new Marker({element:button}).setLngLat(mapCoordinates(place.coordinates)).addTo(this.map);
+      if (Platform.isMobileApp) {
+        button.addEventListener('click', event => {
+          event.stopPropagation();
+          this.touchPopup.open(this.popup(place), place.name, button);
+        });
+      } else {
+        const popup = new Popup({offset:20, closeButton:true, maxWidth:'320px'}).setDOMContent(this.popup(place));
+        marker.setPopup(popup);
+        this.popups.push(popup);
+      }
+      this.markers.push(marker);
     }
   }
 
   private popup(place: PlaceRecord): HTMLElement {
-    const content = this.canvas.ownerDocument.createElement('div');
-    content.className = 'charity-map-popup';
+    const content = createDiv('charity-map-popup');
     if (Platform.isMobileApp) content.addClass('charity-map-mobile');
     const title = content.createEl(this.options.onPick ? 'span' : 'button', {text:place.name, cls:'charity-popup-title'});
     if (this.options.selectionLabel) title.setText(this.options.selectionLabel + ': ' + place.name);
     if (!this.options.onPick) title.addEventListener('click', () => {
       if (this.host.openFile) runMapAction(()=>this.host.openFile?.(place.path));
-      else void this.host.app.workspace.openLinkText(place.path, '', false);
+      else runMapAction(() => this.host.app.workspace.openLinkText(place.path, '', false));
     });
     if (place.kind === 'shop') content.createEl('p', {text:formatRating(place.properties.rating)});
     for (const [key, label] of (place.kind === 'shop' ? [['comments','Takeaway'],['last_visited','Last visit']] : [['parking_cost','Cost'],['parking_availability','Usual availability']])) {
-      const value = place.properties[key!];
-      if (value !== undefined && value !== null && value !== '') content.createEl('p', {text:`${label}: ${String(value)}`});
+      const value = place.properties[key];
+      if ((typeof value === 'string' && value !== '') || typeof value === 'number' || typeof value === 'boolean') content.createEl('p', {text:`${label}: ${String(value)}`});
     }
     appendNavigation(content,place,this.records,this.host);
     const copy = content.createEl('button',{text:'Copy coordinates'});
-    copy.addEventListener('click',() => { void this.copy(place.coordinates!); });
+    copy.addEventListener('click',() => { if (validCoordinates(place.coordinates)) void this.copy(place.coordinates); });
     return content;
   }
   private async copy(coordinates: Coordinates): Promise<void> {
@@ -269,6 +286,7 @@ export class PlaceMap extends Component {
   onunload(): void {
     this.disposed = true; this.generation++;
     this.markers.forEach(m => m.remove()); this.popups.forEach(p => p.remove());
+    this.touchPopup.destroy();
     this.markers = []; this.popups = [];
     this.map?.remove(); this.map = null;
     this.root.remove();

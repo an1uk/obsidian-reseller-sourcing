@@ -2,6 +2,8 @@
 // Copyright (c) 2025 Obsidian. MIT licence: licenses/obsidian-maps-MIT.txt.
 import { App, BasesEntry, BasesPropertyId, ListValue, Platform, Value } from 'obsidian';
 import { Popup, Map } from 'maplibre-gl';
+import { MobileMapPopup } from './mobile-popup';
+import { runMapAction } from './actions';
 
 /** Cap on how many properties a popup will consider rendering. */
 const MAX_POPUP_PROPERTIES = 20;
@@ -19,10 +21,12 @@ export class PopupManager {
 	private popupHideTimeoutWin: Window | null = null;
 	private containerEl: HTMLElement;
 	private app: App;
+	private touchPopup: MobileMapPopup;
 
 	constructor(containerEl: HTMLElement, app: App, private appendActions?: (entry: BasesEntry, container: HTMLElement) => void) {
 		this.containerEl = containerEl;
 		this.app = app;
+		this.touchPopup = new MobileMapPopup(containerEl);
 	}
 
 	setMap(map: Map | null): void {
@@ -45,6 +49,10 @@ export class PopupManager {
 
 		this.clearPopupHideTimeout();
 		this.persistent = persistent;
+		if (Platform.isMobileApp) {
+			this.touchPopup.open(this.createPopupContent(entry, propertiesWithValues, getDisplayName), entry.file.basename, this.containerEl);
+			return;
+		}
 
 		// Create shared popup if it doesn't exist
 		if (!this.sharedPopup) {
@@ -103,6 +111,7 @@ export class PopupManager {
 
 	destroy(): void {
 		this.clearPopupHideTimeout();
+		this.touchPopup.destroy();
 		if (this.sharedPopup) {
 			this.sharedPopup.remove();
 			this.sharedPopup = null;
@@ -143,8 +152,7 @@ export class PopupManager {
 		propertiesWithValues: PopupProperty[],
 		getDisplayName: (prop: BasesPropertyId) => string
 	): HTMLElement {
-		const containerEl = this.containerEl.ownerDocument.createElement('div');
-		containerEl.className = 'charity-map-popup';
+		const containerEl = createDiv('charity-map-popup');
 		if (Platform.isMobileApp) containerEl.addClass('charity-map-mobile');
 
 		// Use first property as title (still acts as a link to the file)
@@ -178,7 +186,7 @@ export class PopupManager {
 		if (this.persistent) {
 			if (propertiesWithValues.length === 0) containerEl.createEl('p', {text:entry.file.basename});
 			const open = containerEl.createEl('button', {text:'Open note', cls:'charity-popup-open-note'});
-			open.addEventListener('click', () => { void this.app.workspace.openLinkText(entry.file.path, '', false); });
+			open.addEventListener('click', () => { runMapAction(() => this.app.workspace.openLinkText(entry.file.path, '', false)); });
 		}
 		this.appendActions?.(entry, containerEl);
 		return containerEl;

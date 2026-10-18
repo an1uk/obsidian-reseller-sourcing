@@ -1,3 +1,4 @@
+import * as guards from '../src/domain/guards';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -6,6 +7,7 @@ import { transformSync } from 'esbuild';
 
 function harness(paths: string[]) {
   class Element {
+    instanceOf(type: unknown) { return type === Element; }
     nodeType = 1; isConnected = true; visible = true;
     listeners = new Map<string, Set<(event: any) => void>>();
     ownerDocument: { activeElement: unknown } = { activeElement: undefined };
@@ -42,7 +44,7 @@ function harness(paths: string[]) {
   const module = { exports: {} as Record<string, any> };
   const source = fs.readFileSync(new URL('../src/ui/properties.ts', import.meta.url), 'utf8');
   vm.runInNewContext(transformSync(source, { loader: 'ts', format: 'cjs', target: 'es2022' }).code, {
-    module, exports: module.exports, require() { return { MarkdownView }; },
+    module, exports: module.exports, HTMLElement: Element, require(id: string) { return id.endsWith('domain/guards') ? guards : { MarkdownView }; },
     window: { setTimeout(run: () => void) { timers.set(++timer, run); return timer; }, clearTimeout(id: number) { timers.delete(id); } },
   });
   module.exports.registerPlacePropertiesDefault(plugin);

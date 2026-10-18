@@ -32,15 +32,15 @@ export interface OutingRoutePreview {
 export const MAX_ROUTE_WAYPOINTS = 3;
 export const MAX_ROUTE_URL_LENGTH = 2048;
 const fallbackName = (path: string): string => path.split('/').at(-1)?.replace(/\.md$/i, '') || 'Missing destination';
-const recordPath = (path: string): string => path.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0]!.replace(/#.*$/, '');
+const recordPath = (path: string): string => path.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0].replace(/#.*$/, '');
 
 /** Expand JavaScript's exponent notation without rounding the saved numeric pin. */
 function decimal(value: number): string {
   const text = String(value);
   if (!/[eE]/.test(text)) return text;
   const sign = text.startsWith('-') ? '-' : '', unsigned = sign ? text.slice(1) : text;
-  const [coefficient, exponent] = unsigned.split(/[eE]/), dot = coefficient!.indexOf('.');
-  const digits = coefficient!.replace('.', ''), point = (dot < 0 ? digits.length : dot) + Number(exponent);
+  const [coefficient, exponent] = unsigned.split(/[eE]/), dot = coefficient.indexOf('.');
+  const digits = coefficient.replace('.', ''), point = (dot < 0 ? digits.length : dot) + Number(exponent);
   return sign + (point <= 0 ? '0.' + '0'.repeat(-point) + digits :
     point >= digits.length ? digits + '0'.repeat(point - digits.length) :
       digits.slice(0, point) + '.' + digits.slice(point));
@@ -60,20 +60,20 @@ function splitRoutes(destinations: OutingRouteDestination[], start: OutingRouteD
   const count = destinations.length, best: { count: number; length: number; url: string }[] = [];
   best[count] = { count: 0, length: 0, url: '' };
   for (let offset = count - 1; offset >= 0; offset--) {
-    const origin = offset ? destinations[offset - 1]! : start;
+    const origin = offset ? destinations[offset - 1] : start;
     best[offset] = { count: Infinity, length: 0, url: '' };
     for (let length = 1; length <= limit && offset + length <= count; length++) {
       const url = routeUrl(origin, destinations.slice(offset, offset + length));
       if (url.length > MAX_ROUTE_URL_LENGTH) break;
-      const total = 1 + best[offset + length]!.count;
-      if (total < best[offset]!.count || (total === best[offset]!.count && length > best[offset]!.length))
+      const total = 1 + best[offset + length].count;
+      if (total < best[offset].count || (total === best[offset].count && length > best[offset].length))
         best[offset] = { count: total, length, url };
     }
   }
-  if (count && !Number.isFinite(best[0]!.count)) return { parts: [], blockers: ['A destination cannot fit within a Google Maps route URL. Open its individual directions instead.'] };
+  if (count && !Number.isFinite(best[0].count)) return { parts: [], blockers: ['A destination cannot fit within a Google Maps route URL. Open its individual directions instead.'] };
   const parts: OutingRoutePart[] = [];
   for (let offset = 0; offset < count;) {
-    const next = best[offset]!, origin = offset ? destinations[offset - 1]! : start;
+    const next = best[offset], origin = offset ? destinations[offset - 1] : start;
     parts.push({ index: parts.length, origin, destinations: destinations.slice(offset, offset + next.length), url: next.url });
     offset += next.length;
   }
@@ -126,7 +126,7 @@ export function buildOutingRoutePreview(
       selectedPaths.add(stop.sourcePath); sourcePaths.add(stop.sourcePath);
       return { path: stop.sourcePath, name: byPath.get(stop.sourcePath)?.name || fallbackName(stop.sourcePath), status: stop.status };
     });
-    const path = group.parkingPath || sources[0]!.path, kind = group.parkingPath ? 'parking' as const : 'source' as const;
+    const path = group.parkingPath || sources[0].path, kind = group.parkingPath ? 'parking' as const : 'source' as const;
     selectedPaths.add(path);
     const saved = byPath.get(path), name = saved?.name || fallbackName(path);
     const coordinates = validateCoordinates(saved?.coordinates);

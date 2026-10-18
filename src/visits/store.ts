@@ -1,8 +1,11 @@
+import { propertyText } from '../domain/guards';
 import type { App, TFile } from 'obsidian';
 import type { PlaceRecord, VisitInput } from '../types';
 import { safeFileName } from '../domain';
 import { hashText, linkPath, readNote, updateNoteProperty, wiki, writeNote } from '../storage/markdown';
 import type { ColourEvidence, VisitInspection, VisitOperation, VisitRecord, VisitSaveOptions, VisitDraftState, VisitSavedWorkInspection } from './types';
+import { hasControlCharacters, isUnknownArray } from '../domain/guards';
+import { notebookFiles } from '../storage/files';
 interface VisitHost {
   app: App; root(): string; examples?: boolean;
   exclusive<T>(run: () => Promise<T>): Promise<T>;
@@ -17,6 +20,20 @@ const validTime = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-
 const sections = ['Observations', 'Useful finds', 'Next time'] as const;
 const keys = ['visit_schema', 'visit_id', 'source', 'visit_date', 'recorded_at', 'updated_at', 'items_purchased', 'haul_potential', 'stock_colour', 'colour_evidence', 'outing', 'outing_id', 'stop_id', 'legacy_operation_id'] as const;
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+/** Drafts may be incomplete, but their portable scalar shapes must remain valid. */
+export function visitInputShape(value: unknown): value is VisitInput {
+  if (!object(value) || typeof value.observations !== 'string' || typeof value.finds !== 'string' || typeof value.nextTime !== 'string' || typeof value.visitDate !== 'string' || typeof value.updateLastVisited !== 'boolean') return false;
+  if (['itemsPurchased', 'haulPotential', 'rating'].some(key => value[key] !== undefined && (typeof value[key] !== 'number' || !Number.isFinite(value[key])))) return false;
+  if (['stockColour', 'comments'].some(key => value[key] !== undefined && typeof value[key] !== 'string')) return false;
+  return value.colourEvidence === undefined || value.colourEvidence === 'confirmed' || value.colourEvidence === 'suspected' || value.colourEvidence === 'unknown';
+}
+function visitRecordShape(value: unknown): value is VisitRecord {
+  return object(value) && value.schema === 1 && safeId(value.id) && typeof value.path === 'string' && typeof value.sourcePath === 'string' && validDate(value.visitDate) && validTime(value.recordedAt) && validTime(value.updatedAt) && typeof value.revision === 'string' && typeof value.observations === 'string' && typeof value.finds === 'string' && typeof value.nextTime === 'string' &&
+    ['itemsPurchased', 'haulPotential'].every(key => value[key] === undefined || typeof value[key] === 'number' && Number.isFinite(value[key])) && ['stockColour', 'outingPath', 'outingId', 'stopId', 'legacyOperationId'].every(key => value[key] === undefined || typeof value[key] === 'string') && (value.sourcingExample === undefined || typeof value.sourcingExample === 'boolean') && (value.colourEvidence === undefined || value.colourEvidence === 'confirmed' || value.colourEvidence === 'suspected' || value.colourEvidence === 'unknown');
+}
+function visitOperationShape(value: unknown): value is VisitOperation {
+  return object(value) && value.schema === 1 && safeId(value.id) && (value.kind === 'create' || value.kind === 'update') && (value.stage === 'prepared' || value.stage === 'visit-written' || value.stage === 'complete' || value.stage === 'cancelled') && visitInputShape(value.input) && visitRecordShape(value.expected) && typeof value.sourceIdentity === 'string' && typeof value.sourceBeforeHash === 'string' && typeof value.inputHash === 'string' && validTime(value.recordedAt) && typeof value.sourcePath === 'string' && typeof value.visitPath === 'string' && safeId(value.visitId) && ['outingPath', 'outingId', 'stopId', 'beforeVisitHash'].every(key => value[key] === undefined || typeof value[key] === 'string') && (value.beforeValues === undefined || object(value.beforeValues));
+}
 function number(v: unknown, kind: 'items' | 'haul'): number | undefined {
   if (v === undefined || v === null || v === '') return undefined;
   if (typeof v !== 'number' || !Number.isSafeInteger(v) || v < (kind === 'items' ? 0 : 1) || kind === 'haul' && v > 5) throw Error(kind === 'items' ? 'Items purchased must be a nonnegative whole number, or blank for unknown.' : 'Haul potential must be a whole number from 1 to 5, or blank.');
@@ -47,8 +64,8 @@ function bounds(body: string, label: string): { start: number; content: number; 
   const matches = [...body.matchAll(new RegExp('^## ' + label + '[ \\t]*\\r?\\n', 'gm'))];
   if (matches.length > 1) throw Error('The visit has duplicate ' + label + ' sections. Review the note before editing.');
   const m = matches[0]; if (!m) return null;
-  const content = m.index! + m[0].length, next = /^## (?:Observations|Useful finds|Next time|Notes)[ \t]*\r?$/m.exec(body.slice(content));
-  return { start: m.index!, content, end: next ? content + next.index : body.length };
+  const content = m.index + m[0].length, next = /^## (?:Observations|Useful finds|Next time|Notes)[ \t]*\r?$/m.exec(body.slice(content));
+  return { start: m.index, content, end: next ? content + next.index : body.length };
 }
 function ownedText(body: string, label: string): string { const b = bounds(body, label); return b ? body.slice(b.content, b.end).trim() : ''; }
 function propertiesFor(r: VisitRecord): Record<string, unknown> {
@@ -66,7 +83,7 @@ export async function readVisitRecord(raw: string, path: string): Promise<VisitR
   if (p.stock_colour !== undefined && p.stock_colour !== null && p.stock_colour !== '') {
     if (typeof p.stock_colour !== 'string' || !p.stock_colour.trim() || p.stock_colour.length > 80 || /[\r\n]/.test(p.stock_colour)) throw Error('This visit has an invalid stock colour.');
     r.stockColour = p.stock_colour.trim();
-    if (p.colour_evidence !== undefined && p.colour_evidence !== null && !['confirmed', 'suspected', 'unknown'].includes(String(p.colour_evidence))) throw Error('This visit has invalid colour evidence.');
+    if (p.colour_evidence !== undefined && p.colour_evidence !== null && p.colour_evidence !== 'confirmed' && p.colour_evidence !== 'suspected' && p.colour_evidence !== 'unknown') throw Error('This visit has invalid colour evidence.');
     r.colourEvidence = p.colour_evidence as ColourEvidence || 'unknown';
   }
   if (p.outing) { if (typeof p.outing !== 'string') throw Error('The outing link is invalid.'); r.outingPath = linkPath(p.outing); }
@@ -76,7 +93,7 @@ export async function readVisitRecord(raw: string, path: string): Promise<VisitR
 }
 export function writeVisitRecord(r: VisitRecord): string {
   const fence = String.fromCharCode(96).repeat(3);
-  const body = fence + 'charity-sourcing\nview: visit\n' + fence + '\n\n' + sections.map((label, i) => '## ' + label + '\n\n' + [r.observations, r.finds, r.nextTime][i]!.trim() + '\n\n').join('') + '## Notes\n\n';
+  const body = fence + 'charity-sourcing\nview: visit\n' + fence + '\n\n' + sections.map((label, i) => '## ' + label + '\n\n' + [r.observations, r.finds, r.nextTime][i].trim() + '\n\n').join('') + '## Notes\n\n';
   return writeNote({ tags: ['sourcing-visit'], ...propertiesFor(r), ...(r.sourcingExample ? { sourcing_example: true } : {}) }, body);
 }
 function editVisitRecord(raw: string, r: VisitRecord): string {
@@ -84,7 +101,7 @@ function editVisitRecord(raw: string, r: VisitRecord): string {
   for (const key of keys) next = updateNoteProperty(next, key, p[key] ?? null);
   const note = readNote(next), nl = next.includes('\r\n') ? '\r\n' : '\n'; let body = note.body;
   for (const [i, label] of sections.entries()) {
-    const b = bounds(body, label), text = [r.observations, r.finds, r.nextTime][i]!.trim().replace(/\r?\n/g, nl), block = '## ' + label + nl + nl + text + nl + nl;
+    const b = bounds(body, label), text = [r.observations, r.finds, r.nextTime][i].trim().replace(/\r?\n/g, nl), block = '## ' + label + nl + nl + text + nl + nl;
     if (b) body = body.slice(0, b.start) + block + body.slice(b.end);
     else { const notes = /^## Notes[ \t]*\r?\n/m.exec(body), at = notes?.index ?? body.length; body = body.slice(0, at) + block + body.slice(at); }
   }
@@ -99,7 +116,7 @@ function inputRecord(r: VisitRecord, input: VisitInput, updatedAt: string): Visi
 /** Journalled multi-file saves share the notebook's existing serial lane. */
 export class VisitStore {
   constructor(private host: VisitHost) {}
-  private owns(path: string, folder: string): boolean { return path.startsWith(this.host.root() + '/' + folder + '/') && !/[\\\x00-\x1f]/.test(path) && !path.split('/').some(p => !p || p === '.' || p === '..'); }
+  private owns(path: string, folder: string): boolean { return path.startsWith(this.host.root() + '/' + folder + '/') && !path.includes('\\') && !hasControlCharacters(path, false) && !path.split('/').some(p => !p || p === '.' || p === '..'); }
   private ownsSource(path: string): boolean { return this.owns(path, 'Places') || this.owns(path, 'Sources') || this.owns(path, 'Shops'); }
   private file(path: string, folder: string): TFile {
     if (!this.owns(path, folder)) throw Error('Choose a visit in this notebook.');
@@ -111,11 +128,11 @@ export class VisitStore {
     const file = this.host.app.vault.getAbstractFileByPath(path); if (!fileLike(file)) throw Error('The source note no longer exists.');
     const raw = await this.host.app.vault.read(file), p = readNote(raw).properties;
     if (!this.host.examples && p.sourcing_example === true) throw Error('Fictional visits belong in Examples.');
-    return { place, file, raw, identity: String(p.source_capture_id ?? '') };
+    return { place, file, raw, identity: propertyText(p.source_capture_id) };
   }
   async inspect(): Promise<VisitInspection> {
     const visits: VisitRecord[] = [], warnings: string[] = [], sources = new Set((await this.host.listPlaces()).filter(p => p.kind === 'shop').map(p => p.path));
-    for (const f of this.host.app.vault.getMarkdownFiles().filter(f => this.owns(f.path, 'Visits'))) {
+    for (const f of notebookFiles(this.host.app.vault, this.host.root() + '/Visits').filter(f => this.owns(f.path, 'Visits'))) {
       try {
         const raw = await this.host.app.vault.read(f), p = readNote(raw).properties;
         if (!this.host.examples && p.sourcing_example === true) continue;
@@ -136,7 +153,7 @@ export class VisitStore {
     if (!this.host.examples && r.sourcingExample) throw Error('Fictional visits belong in Examples.');
     await this.source(r.sourcePath);
     let copies = 0;
-    for (const f of this.host.app.vault.getMarkdownFiles().filter(f => this.owns(f.path, 'Visits'))) {
+    for (const f of notebookFiles(this.host.app.vault, this.host.root() + '/Visits').filter(f => this.owns(f.path, 'Visits'))) {
       try {
         const properties = readNote(await this.host.app.vault.read(f)).properties;
         if (!this.host.examples && properties.sourcing_example === true) continue;
@@ -156,8 +173,8 @@ export class VisitStore {
     return JSON.stringify(v, null, 2) + '\n';
   }
   private parseOperation(raw: string): VisitOperation {
-    const v = JSON.parse(raw) as VisitOperation;
-    if (!object(v) || v.schema !== 1 || !safeId(v.id) || !['create', 'update'].includes(v.kind) || !['prepared', 'visit-written', 'complete', 'cancelled'].includes(v.stage) || !object(v.input) || !object(v.expected) || typeof v.sourceIdentity !== 'string' || typeof v.sourceBeforeHash !== 'string' || typeof v.inputHash !== 'string' || !validTime(v.recordedAt)) throw Error('The saved visit operation is invalid.');
+    const v: unknown = JSON.parse(raw);
+    if (!visitOperationShape(v)) throw Error('The saved visit operation has invalid content or dates.');
     v.sourcePath = linkPath(v.sourcePath); v.visitPath = linkPath(v.visitPath); v.expected.path = linkPath(v.expected.path); v.expected.sourcePath = linkPath(v.expected.sourcePath);
     if (v.outingPath) v.outingPath = linkPath(v.outingPath);
     if (v.expected.outingPath) v.expected.outingPath = linkPath(v.expected.outingPath);
@@ -183,7 +200,7 @@ export class VisitStore {
   }
   private async operationsWithWarnings(): Promise<{ operations: VisitOperation[]; warnings: string[] }> {
     const operations: VisitOperation[] = [], warnings: string[] = [];
-    for (const f of this.host.app.vault.getFiles().filter(f => this.owns(f.path, 'System/Visit operations') && f.extension === 'json')) {
+    for (const f of notebookFiles(this.host.app.vault, this.host.root()).filter(f => this.owns(f.path, 'System/Visit operations') && f.extension === 'json')) {
       try { const op = this.parseOperation(await this.host.app.vault.read(f)); if (f.path !== this.operationPath(op.id)) throw Error('Operation filename and identity differ.'); await this.verifyOperation(op); operations.push(op); }
       catch (e) { warnings.push(f.path + ': ' + String(e instanceof Error ? e.message : e)); }
     }
@@ -268,19 +285,19 @@ export class VisitStore {
     const patch = this.sourcePatch(op.input);
     if (Object.keys(patch).length) {
       const current = await this.host.app.vault.read(source.file), p = readNote(current).properties;
-      if (String(p.source_capture_id ?? '') !== op.sourceIdentity) throw Error('The source was replaced before updating its assessment.');
+      if (propertyText(p.source_capture_id) !== op.sourceIdentity) throw Error('The source was replaced before updating its assessment.');
       if (p.sourcing_visit_receipts !== undefined && !Array.isArray(p.sourcing_visit_receipts)) throw Error('Review the invalid source visit receipts before continuing.');
-      const receipts = Array.isArray(p.sourcing_visit_receipts) ? p.sourcing_visit_receipts : [], receipt = receipts.find(v => object(v) && v.id === op.id);
+      const receipts = isUnknownArray(p.sourcing_visit_receipts) ? p.sourcing_visit_receipts : [], receipt = receipts.find(v => object(v) && v.id === op.id);
       if (receipt) {
         if (!object(receipt) || receipt.kind !== 'linked-visit' || receipt.inputHash !== op.inputHash || receipt.visitId !== op.visitId) throw Error('This visit has a conflicting source receipt.');
       } else {
         for (const key of Object.keys(patch)) if (!same(p[key], op.beforeValues?.[key])) throw Error('The source assessment changed during the visit save. The visit is retained; review recovery before retrying.');
         await this.host.app.vault.process(source.file, raw => {
           const latest = readNote(raw).properties;
-          if (String(latest.source_capture_id ?? '') !== op.sourceIdentity) throw Error('The source was replaced before saving.');
+          if (propertyText(latest.source_capture_id) !== op.sourceIdentity) throw Error('The source was replaced before saving.');
           for (const key of Object.keys(patch)) if (!same(latest[key], op.beforeValues?.[key])) throw Error('The source assessment changed before saving. The visit is retained.');
           if (latest.sourcing_visit_receipts !== undefined && !Array.isArray(latest.sourcing_visit_receipts)) throw Error('The source visit receipts changed. Review recovery.');
-          const latestReceipts = Array.isArray(latest.sourcing_visit_receipts) ? latest.sourcing_visit_receipts : [];
+          const latestReceipts = isUnknownArray(latest.sourcing_visit_receipts) ? latest.sourcing_visit_receipts : [];
           if (latestReceipts.some(v => object(v) && v.id === op.id)) throw Error('The visit receipt changed while saving. Retry recovery.');
           let next = raw; for (const [key, value] of Object.entries(patch)) next = updateNoteProperty(next, key, value);
           return updateNoteProperty(next, 'sourcing_visit_receipts', [...latestReceipts, { id: op.id, kind: 'linked-visit', visitId: op.visitId, visitPath: wiki(op.visitPath), inputHash: op.inputHash, recordedAt: op.recordedAt, ...(op.outingId ? { outingId: op.outingId, stopId: op.stopId } : {}) }]);
@@ -301,12 +318,12 @@ export class VisitStore {
   }
   private async drafts(): Promise<{ file: TFile; raw: string; value: { sourcePath: string; sourceIdentity: string; visitPath?: string; input: VisitInput; cleared?: boolean; visitRevision?: string } }[]> {
     const values: { file: TFile; raw: string; value: { sourcePath: string; sourceIdentity: string; visitPath?: string; input: VisitInput; cleared?: boolean; visitRevision?: string } }[] = [];
-    for (const f of this.host.app.vault.getFiles().filter(f => this.owns(f.path, 'System/Visit drafts') && f.extension === 'json')) {
-      const raw = await this.host.app.vault.read(f), v = JSON.parse(raw);
-      if (!object(v) || v.schema !== 1 || typeof v.sourcePath !== 'string' || typeof v.sourceIdentity !== 'string' || !object(v.input)) throw Error('Review the invalid standalone visit draft before continuing.');
-      v.sourcePath = linkPath(v.sourcePath); if (v.visitPath) v.visitPath = linkPath(v.visitPath);
-      if (!this.ownsSource(v.sourcePath as string) || v.visitPath && !this.owns(v.visitPath as string, 'Visits')) throw Error('A visit draft points outside this notebook.');
-      values.push({ file: f, raw, value: v as unknown as typeof values[number]['value'] });
+    for (const f of notebookFiles(this.host.app.vault, this.host.root()).filter(f => this.owns(f.path, 'System/Visit drafts') && f.extension === 'json')) {
+      const raw = await this.host.app.vault.read(f), v: unknown = JSON.parse(raw);
+      if (!object(v) || v.schema !== 1 || typeof v.sourcePath !== 'string' || typeof v.sourceIdentity !== 'string' || !visitInputShape(v.input) || v.visitPath !== undefined && typeof v.visitPath !== 'string' || v.visitRevision !== undefined && typeof v.visitRevision !== 'string' || v.cleared !== undefined && typeof v.cleared !== 'boolean') throw Error('Review the invalid standalone visit draft before continuing.');
+      const sourcePath = linkPath(v.sourcePath), visitPath = v.visitPath ? linkPath(v.visitPath) : undefined;
+      if (!this.ownsSource(sourcePath) || visitPath && !this.owns(visitPath, 'Visits')) throw Error('A visit draft points outside this notebook.');
+      values.push({ file: f, raw, value: { sourcePath, sourceIdentity: v.sourceIdentity, input: v.input, ...(visitPath ? { visitPath } : {}), ...(v.visitRevision ? { visitRevision: v.visitRevision } : {}), ...(typeof v.cleared === 'boolean' ? { cleared: v.cleared } : {}) } });
     }
     return values;
   }
@@ -317,7 +334,7 @@ export class VisitStore {
   async inspectSavedWork(): Promise<VisitSavedWorkInspection> {
     const result: VisitSavedWorkInspection = { drafts: [], operations: [], warnings: [] };
     const warn = (path: string, e: unknown) => result.warnings.push({ path, message: e instanceof Error ? e.message : String(e) });
-    for (const f of this.host.app.vault.getFiles().filter(f => this.owns(f.path, 'System/Visit drafts') && f.extension === 'json')) {
+    for (const f of notebookFiles(this.host.app.vault, this.host.root()).filter(f => this.owns(f.path, 'System/Visit drafts') && f.extension === 'json')) {
       try {
         const raw = await this.host.app.vault.read(f), value: unknown = JSON.parse(raw);
         if (!object(value) || value.schema !== 1 || typeof value.sourcePath !== 'string' || typeof value.sourceIdentity !== 'string' || !object(value.input)) throw Error('This saved visit draft has invalid properties.');
@@ -336,7 +353,7 @@ export class VisitStore {
             input.stockColour !== undefined && typeof input.stockColour !== 'string' ||
             input.comments !== undefined && typeof input.comments !== 'string' ||
             input.rating !== undefined && (typeof input.rating !== 'number' || !Number.isFinite(input.rating)) ||
-            input.colourEvidence !== undefined && !['confirmed', 'suspected', 'unknown'].includes(String(input.colourEvidence))) throw Error('This visit draft contains unsupported values.');
+            input.colourEvidence !== undefined && input.colourEvidence !== 'confirmed' && input.colourEvidence !== 'suspected' && input.colourEvidence !== 'unknown') throw Error('This visit draft contains unsupported values.');
         if (!validTime(value.updatedAt)) throw Error('This visit draft has no valid saved date.');
         let visitPath: string | undefined, visitRevision: string | undefined;
         if (value.visitPath !== undefined) {
@@ -354,7 +371,7 @@ export class VisitStore {
     const duplicates = new Set(result.drafts.filter((draft, index, all) => all.some((other, at) => at !== index && other.sourcePath === draft.sourcePath && (other.visitPath ?? '') === (draft.visitPath ?? ''))).map(draft => draft.path));
     for (const path of duplicates) warn(path, Error('More than one draft exists for this visit. Review the saved drafts before continuing.'));
     result.drafts = result.drafts.filter(draft => !duplicates.has(draft.path)).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt) || a.path.localeCompare(b.path));
-    for (const f of this.host.app.vault.getFiles().filter(f => this.owns(f.path, 'System/Visit operations') && f.extension === 'json')) {
+    for (const f of notebookFiles(this.host.app.vault, this.host.root()).filter(f => this.owns(f.path, 'System/Visit operations') && f.extension === 'json')) {
       try {
         const raw = await this.host.app.vault.read(f), op = this.parseOperation(raw);
         if (f.path !== this.operationPath(op.id)) throw Error('Operation filename and identity differ.');
@@ -414,7 +431,7 @@ export class VisitStore {
       const draft = drafts[0];
       if (!draft) { if (expectedDraftRevision) throw Error('The saved visit draft was removed or changed.'); return; }
       if (!expectedDraftRevision || await hashText(draft.raw) !== expectedDraftRevision) throw Error('The visit draft changed in another pane. Its saved text was kept.');
-      const v = JSON.parse(draft.raw); v.cleared = true;
+      const v: unknown = JSON.parse(draft.raw); if (!object(v)) throw Error('The saved visit draft is invalid.'); v.cleared = true;
       await this.host.app.vault.process(draft.file, current => { if (current !== draft.raw) throw Error('The visit draft changed before clearing.'); return JSON.stringify(v, null, 2) + '\n'; });
     });
   }

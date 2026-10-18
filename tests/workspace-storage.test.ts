@@ -9,7 +9,12 @@ import type { OutingPreparation, PlacePreparation, PreparationDraft } from '../s
 import { buildExamplePack } from '../src/examples/pack';
 import { hashText, readNote } from '../src/storage/markdown';
 
-const draft = <T>(data:T,kind:'outing'|'place'='outing'):PreparationDraft<T> => ({schema:1,id:crypto.randomUUID(),kind,root:'Reseller sourcing',updatedAt:new Date().toISOString(),deferred:false,phase:'editing',data,revision:''});
+function draft(data: OutingPreparation, kind?: 'outing'): PreparationDraft<OutingPreparation>;
+function draft(data: PlacePreparation, kind: 'place'): PreparationDraft<PlacePreparation>;
+function draft(data: OutingPreparation | PlacePreparation, kind: 'outing' | 'place' = 'outing'): PreparationDraft {
+  const base = { schema: 1 as const, id: crypto.randomUUID(), root: 'Reseller sourcing', updatedAt: new Date().toISOString(), deferred: false, phase: 'editing' as const, revision: '' };
+  return kind === 'outing' ? { ...base, kind, data: data as OutingPreparation } : { ...base, kind, data: data as PlacePreparation };
+}
 const preparation = (path:string):OutingPreparation => ({name:'Small browse',groups:[{id:'group',parkingPath:'',stops:[{id:'stop',sourcePath:path,status:'pending'}]}],step:2,unresolved:[],filter:{text:'',area:'',shortlist:false,type:'',view:'list'}});
 async function ready(){const f=fixture();await f.store.setup();const area=await f.store.ensureLocality('Exampletown');const source=await f.store.saveCapture(newDraft(),area.path,'Source');return{...f,area,source};}
 test('workspace paths share Places, keep locality optional and organise visits and outings by month',()=>{
@@ -83,7 +88,7 @@ test('draft source and parking links follow single-place moves and root moves',a
   await f.store.moveNotebook('Moved notebook');const moved=await f.store.preparations.get(d.id);assert.equal(moved?.root,'Moved notebook');assert.match((moved!.data as OutingPreparation).groups[0]!.stops[0]!.sourcePath,/^Moved notebook\/Places\//);
 });
 test('place preparation retains invalid raw coordinates for later correction',async()=>{
-  const f=await ready();const d=draft<PlacePreparation>({capture:newDraft('manual-place'),area:{town:'',locality:''},step:2,filename:'',coordinatesText:'51, not a longitude'},'place');await f.store.preparations.save(d,'');
+  const f=await ready();const d=draft({capture:newDraft('manual-place'),area:{town:'',locality:''},step:2,filename:'',coordinatesText:'51, not a longitude'},'place');await f.store.preparations.save(d,'');
   assert.equal(((await f.store.preparations.get(d.id))!.data as PlacePreparation).coordinatesText,'51, not a longitude');
 });
 test('frozen v4 generator matches the independently installed 0.10.0 pack byte manifest',async()=>{

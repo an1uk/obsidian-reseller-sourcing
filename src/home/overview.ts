@@ -1,9 +1,12 @@
+import { propertyText } from '../domain/guards';
 import type { TFile } from 'obsidian';
 import type { NotebookContext } from '../notebook-context';
 import type { OutingRecord } from '../outings/types';
 import type { PlaceRecord } from '../types';
 import { hashText, readNote } from '../storage/markdown';
 import { validateVisitInput } from '../visits/store';
+import { hasControlCharacters } from '../domain/guards';
+import { notebookFiles } from '../storage/files';
 
 /** A read model only: actions re-enter the existing stores and their safeguards. */
 export type ResumeKind = 'visit-operation' | 'outing-operation' | 'visit-draft' | 'outing-draft' | 'active-outing';
@@ -18,9 +21,10 @@ export interface HomeOverview {
   captures: number; sourcesAvailable: boolean; primary?: ResumeItem; others: ResumeItem[]; warnings: HomeWarning[];
 }
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const fileLike = (v: unknown): v is TFile => object(v) && typeof v.extension === 'string' && typeof v.basename === 'string';
 const validTime = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d\d-\d\dT/.test(v) && Number.isFinite(Date.parse(v));
 const owns = (context: NotebookContext, path: string, folder: string) => path.startsWith(context.root + '/' + folder + '/') &&
-  !/[\\\x00-\x1f]/.test(path) && !path.split('/').some(part => !part || part === '.' || part === '..');
+  !path.includes('\\') && !hasControlCharacters(path, false) && !path.split('/').some(part => !part || part === '.' || part === '..');
 const priority = (item: ResumeItem) => item.kind.endsWith('operation') ? 0 : item.kind.endsWith('draft') ? 1 : 2;
 const summaryOrder = (a: ResumeItem, b: ResumeItem) => priority(a) - priority(b) || Date.parse(b.updatedAt) - Date.parse(a.updatedAt) || a.path.localeCompare(b.path) || a.id.localeCompare(b.id);
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -47,7 +51,7 @@ export async function inspectHome(context: NotebookContext): Promise<HomeOvervie
     savedWork = await context.store.visits.inspectSavedWork();
     overview.warnings.push(...savedWork.warnings);
   } catch (error) { warning(undefined, 'Saved visits could not be inspected: ' + message(error)); }
-  const outings = context.app.vault.getMarkdownFiles().filter(file => owns(context, file.path, 'Outings'));
+  const outings = notebookFiles(context.app.vault, context.root + '/Outings').filter(file => file.extension === 'md' && owns(context, file.path, 'Outings'));
   for (const file of outings) {
     try {
       const properties = readNote(await context.app.vault.read(file)).properties;
@@ -60,7 +64,7 @@ export async function inspectHome(context: NotebookContext): Promise<HomeOvervie
       if (outing.operation) {
         const operation = outing.operation, stop = stops.find(stop => stop.id === operation.stopId)!;
         const source = sourceFor(operation.sourcePath);
-        if (!stop || stop.sourcePath !== source.path || String(source.properties.source_capture_id ?? '') !== operation.sourceIdentity ||
+        if (!stop || stop.sourcePath !== source.path || propertyText(source.properties.source_capture_id) !== operation.sourceIdentity ||
             !validTime(operation.recordedAt) || !/^[a-f0-9]{64}$/.test(operation.sourceBeforeHash)) throw Error('The unfinished outing save has conflicting source identity or comparison details.');
         validateVisitInput(operation.input);
         if (operation.visitPath && (!owns(context, operation.visitPath, 'Visits') || operation.visitPath !== stop.visitPath || operation.visitId !== stop.visitId)) throw Error('The unfinished outing save points to a different visit.');
@@ -102,9 +106,9 @@ export async function inspectHome(context: NotebookContext): Promise<HomeOvervie
           continue;
         }
         const path = context.root + '/System/Visit operations/' + operation.id + '.json', file = context.app.vault.getAbstractFileByPath(path);
-        if (!file || !('extension' in file)) throw Error('The saved visit operation no longer exists.');
+        if (!fileLike(file)) throw Error('The saved visit operation no longer exists.');
         items.push({ kind: 'visit-operation', id: operation.id, path, label: 'Review interrupted visit save', sourcePath: source.path, sourceName: source.name,
-          updatedAt: operation.recordedAt, revision: await hashText(await context.app.vault.read(file as TFile)), operationId: operation.id, visitPath: operation.visitPath });
+          updatedAt: operation.recordedAt, revision: await hashText(await context.app.vault.read(file)), operationId: operation.id, visitPath: operation.visitPath });
       } catch (error) { warning(context.root + '/System/Visit operations/' + operation.id + '.json', error); }
     }
     for (const draft of savedWork.drafts) {

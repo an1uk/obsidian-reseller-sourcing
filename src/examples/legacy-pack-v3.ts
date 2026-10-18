@@ -1,5 +1,6 @@
 /** Frozen 0.9.0 generator: do not update the historical v3 payload. */
-import { parse, stringify } from 'yaml';
+import { stringify } from 'yaml';
+import { parseExampleBase } from './base-data';
 import type { VisitRecord } from '../visits/types';
 const sections = ['Observations', 'Useful finds', 'Next time'] as const;
 function propertiesFor(r: VisitRecord): Record<string, unknown> {
@@ -10,7 +11,7 @@ function propertiesFor(r: VisitRecord): Record<string, unknown> {
 
 function writeVisitRecord(r: VisitRecord): string {
   const fence = String.fromCharCode(96).repeat(3);
-  const body = fence + 'charity-sourcing\nview: visit\n' + fence + '\n\n' + sections.map((label, i) => '## ' + label + '\n\n' + [r.observations, r.finds, r.nextTime][i]!.trim() + '\n\n').join('') + '## Notes\n\n';
+  const body = fence + 'charity-sourcing\nview: visit\n' + fence + '\n\n' + sections.map((label, i) => '## ' + label + '\n\n' + [r.observations, r.finds, r.nextTime][i].trim() + '\n\n').join('') + '## Notes\n\n';
   return writeNote({ tags: ['sourcing-visit'], ...propertiesFor(r), ...(r.sourcingExample ? { sourcing_example: true } : {}) }, body);
 }
 
@@ -94,9 +95,9 @@ const parkSeeds=[
 ] as const;
 const round=(n:number)=>Math.round(n*1e6)/1e6;
 const slug=(s:string)=>s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-const pinFor=(i:number):Coordinates=>{const town=towns[i%3]!,n=Math.floor(i/3);return[round(town.pin[0]!+n*.00043),round(town.pin[1]!+(n%3)*.00061)];};
+const pinFor=(i:number):Coordinates=>{const town=towns[i%3],n=Math.floor(i/3);return[round(town.pin[0]+n*.00043),round(town.pin[1]+(n%3)*.00061)];};
 const hoursFor=(i:number)=>['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map((day,n)=>day+', '+(n===6?'Closed':n===5?'10:00 to 16:00':i>=16&&n===0?'By appointment':'09:30 to 17:00'));
-const listing=(i:number,pin:Coordinates|null=pinFor(i))=>'https://www.google.com/maps/place/Fictional_'+slug(seeds[i]!.brand)+'/'+(pin?'data=!4m5!3m4!1sEXAMPLE-BRANCH-'+(i+1)+'!8m2!3d'+pin[0]+'!4d'+pin[1]:'?query_place_id=EXAMPLE-BRANCH-'+(i+1));
+const listing=(i:number,pin:Coordinates|null=pinFor(i))=>'https://www.google.com/maps/place/Fictional_'+slug(seeds[i].brand)+'/'+(pin?'data=!4m5!3m4!1sEXAMPLE-BRANCH-'+(i+1)+'!8m2!3d'+pin[0]+'!4d'+pin[1]:'?query_place_id=EXAMPLE-BRANCH-'+(i+1));
 const marked=(props:Record<string,unknown>,body:string)=>writeNote({...props,sourcing_example:true},FICTION+body);
 const block=(view:string)=>FENCE+'charity-sourcing\nview: '+view+'\n'+FENCE+'\n\n';
 function capture(d:CaptureDraft,v:1|2,description:string):string{
@@ -108,7 +109,7 @@ function capture(d:CaptureDraft,v:1|2,description:string):string{
 }
 function base(root:string,path:string,kind:'shop'|'parking'|undefined,area:string|undefined,vault:string,packVersion:number):string{
  const {baseText}=packVersion>=3?currentAssets:legacyAssets;
- const value=parse(baseText(root,kind,area,vault));
+ const value=parseExampleBase(baseText(root,kind,area,vault));
  value.filters.and=value.filters.and.filter((s:string)=>s!=='note.sourcing_example != true');value.filters.and.push('note.sourcing_example == true');
  value.formulas.google_maps='if(note.google_maps_url || formula.has_location, link('+JSON.stringify('obsidian://charity-sourcing?vault='+encodeURIComponent(vault)+'&action=listing&path=')+' + formula.action_path, "Preview Google Maps"), "")';
  for(const view of value.views){view.notebookRoot=root;view.notebookBasePath=path;}
@@ -129,10 +130,10 @@ function separateVisitRecords(root:string,paths:string[]):Map<number,VisitRecord
  const focalDates=['2026-09-14','2026-09-18','2026-09-21','2026-09-25','2026-09-28','2026-10-02','2026-10-05','2026-10-09','2026-10-12','2026-10-16'];
  const colours=['Blue','Green','Blue','Green','Blue'];
  for(let i=0;i<16;i++){
-  const values:VisitRecord[]=[],seed=seeds[i]!,count=i===0?10:2;
+  const values:VisitRecord[]=[],seed=seeds[i],count=i===0?10:2;
   for(let pass=0;pass<count;pass++){
    const week=Math.floor(pass/2),friday=pass%2===1;
-   let visitDate=i===0?focalDates[pass]!:'2026-10-'+String((pass?9:2)+i%5).padStart(2,'0');
+   let visitDate=i===0?focalDates[pass]:'2026-10-'+String((pass?9:2)+i%5).padStart(2,'0');
    if(i===2&&pass===1)visitDate='2026-10-15';
    if(i===5&&pass===1)visitDate='2026-09-28';
    if(i===6)visitDate='2026-10-08';
@@ -140,9 +141,9 @@ function separateVisitRecords(root:string,paths:string[]):Map<number,VisitRecord
    const recordedDate=i===0&&pass>=8||i===5&&pass===1?'2026-10-17':visitDate;
    const recordedAt=i===2&&pass===1?'2026-10-15T13:00:00.000Z':recordedDate+'T'+(pass%2?'15:10':'10:20')+':00.000Z';
    const id='example-visit-'+String(i).padStart(2,'0')+'-'+String(pass+1).padStart(2,'0');
-   const path=root+'/Visits/'+visitDate+' - '+safeFileName(seed.brand+' - '+towns[i%3]!.name)+' - '+id+'.md';
+   const path=root+'/Visits/'+visitDate+' - '+safeFileName(seed.brand+' - '+towns[i%3].name)+' - '+id+'.md';
    const legacy=visit(seed,i,Math.min(pass,2));
-   const section=(name:string,next:string)=>legacy.split('**'+name+'**\n\n')[1]!.split(next?'\n\n**'+next+'**':'\n\n')[0]!.trim();
+   const section=(name:string,next:string)=>legacy.split('**'+name+'**\n\n')[1].split(next?'\n\n**'+next+'**':'\n\n')[0].trim();
    let observations=section('Observations','Useful finds'),finds=seed.finds+'. These are fictional observations and manually invented counts; no real purchases or sales are recorded.',nextTime=section('Next time','');
    let itemsPurchased:number|undefined=(i+pass)%5+1,haulPotential:number|undefined=(i+pass)%5+1,stockColour:string|undefined,colourEvidence:VisitRecord['colourEvidence']='unknown';
    if(i===0){
@@ -162,7 +163,7 @@ function separateVisitRecords(root:string,paths:string[]):Map<number,VisitRecord
    if(i===8||i===9){stockColour=i===8?'Blue':'Cream';colourEvidence='confirmed';observations+=' The same label was still present. An unchanged sighting is one run, not a new return.';}
    if(i===10){stockColour=pass?'Purple':undefined;colourEvidence=pass?'suspected':'unknown';observations+=' Missing or uncertain label information is kept explicit; it is not inferred from the colour of the garment.';}
    if(i===12){stockColour=pass?'Green':'Blue';colourEvidence=pass?'suspected':'confirmed';observations+=' Confirmed and suspected notes disagree on the same date. Excluding suspected evidence must not turn a conflicting day into a confirmed recurrence.';}
-   const record:VisitRecord={schema:1,id,path,sourcePath:paths[i]!,visitDate,recordedAt,updatedAt:recordedAt,observations,finds,nextTime,
+   const record:VisitRecord={schema:1,id,path,sourcePath:paths[i],visitDate,recordedAt,updatedAt:recordedAt,observations,finds,nextTime,
     ...(itemsPurchased===undefined?{}:{itemsPurchased}),...(haulPotential===undefined?{}:{haulPotential}),...(stockColour?{stockColour}:{}),colourEvidence,sourcingExample:true,revision:''};
    if(i===2&&pass===1){record.outingPath=root+'/Outings/Thimbleton coats and curios.md';record.outingId='example-outing-3';record.stopId='example-stop-3-0-0';}
    values.push(record);
@@ -175,7 +176,7 @@ const demonstrates=(body:string)=>'> [!example]- What this demonstrates\n> '+bod
 function addVisitExamples(files:Record<string,string>,root:string,records:Map<number,VisitRecord[]>):void{
  for(const visits of records.values())for(const record of visits){
   const note=readNote(writeVisitRecord(record));
-  files[record.path]=marked(note.properties,note.body+'\n'+demonstrates(record.sourcePath===records.get(0)![0]!.sourcePath?'One of ten comparable visits: weekday uses the actual visit date; item count and whole-haul potential remain separate. Confirmed label observations describe evidence, not a restocking timetable.':'An editable separate visit with its own recording time, actual visit date and optional measurements. Source judgement, shortlist and Google snapshots remain independent.'));
+  files[record.path]=marked(note.properties,note.body+'\n'+demonstrates(record.sourcePath===records.get(0)![0].sourcePath?'One of ten comparable visits: weekday uses the actual visit date; item count and whole-haul potential remain separate. Confirmed label observations describe evidence, not a restocking timetable.':'An editable separate visit with its own recording time, actual visit date and optional measurements. Source judgement, shortlist and Google snapshots remain independent.'));
  }
  files[root+'/Visits.md']=marked({cssclasses:['charity-sourcing-wide'],tags:['sourcing-example-visits']},
   block('insights')+'The visits table and comparisons are working controls over forty separate fictional visit notes. Filter to Second Sunrise on Loom Lane for the five-Monday/five-Friday comparison; browse the other sources for zero counts, missing values and uncertain labels.\n\n'+
@@ -227,36 +228,36 @@ export async function buildExamplePack(requestedRoot:string,vaultName:string,pac
  for(const[ti,town]of towns.entries()){
   const townPath=root+'/Localities/'+town.name+'.md';areas[ti]=[townPath];
   files[townPath]=marked({tags:['sourcing-locality'],parent_locality:''},block('locality')+town.story+'\n\n'+town.children.map(child=>'[['+root+'/Localities/'+town.name+'/'+child+'|'+child+']]').join(' | ')+'\n');
-  for(const[ci,child]of town.children.entries()){
-   const path=root+'/Localities/'+town.name+'/'+child+'.md';areas[ti]!.push(path);
+  for(const child of town.children){
+   const path=root+'/Localities/'+town.name+'/'+child+'.md';areas[ti].push(path);
    files[path]=marked({tags:['sourcing-locality'],parent_locality:wiki(townPath)},block('locality')+child+' is an invented part of '+town.name+'. Its views contain assigned practice sources and shared parking. The parent town groups both neighbourhoods; this note keeps a smaller area easy to browse.\n\nA premises name alone is not used as evidence of a locality. Pins demonstrate the hierarchy rather than real street knowledge.\n');
   }
-  for(const[ci,area]of areas[ti]!.entries())for(const folder of['Sources','Parking']){
+  for(const[ci,area]of areas[ti].entries())for(const folder of['Sources','Parking']){
    const path=root+'/'+folder+'/'+town.name+(ci?'/'+town.children[ci-1]:'')+'/Area map.base';files[path]=base(root,path,undefined,area,vaultName,packVersion);
   }
  }
- settings.recentLocalities=[areas[0]![1]!,areas[1]![1]!,areas[2]![2]!];
+ settings.recentLocalities=[areas[0][1],areas[1][1],areas[2][2]];
  settings.areaHints=[
-  {id:'example-riverside',phrase:'Riverside Arcade',townPath:areas[0]![0]!,localityPath:areas[0]![1]!,enabled:true},
-  {id:'example-station',phrase:'Station Galleries',townPath:areas[1]![0]!,localityPath:areas[1]![1]!,enabled:true},
-  {id:'example-disabled',phrase:'Old Market Hall',townPath:areas[0]![0]!,localityPath:areas[0]![2]!,enabled:false},
-  {id:'example-conflict-a',phrase:'Canal Mills',townPath:areas[2]![0]!,localityPath:areas[2]![1]!,enabled:true},
-  {id:'example-conflict-b',phrase:'Canal Mills',townPath:areas[2]![0]!,localityPath:areas[2]![2]!,enabled:true},
+  {id:'example-riverside',phrase:'Riverside Arcade',townPath:areas[0][0],localityPath:areas[0][1],enabled:true},
+  {id:'example-station',phrase:'Station Galleries',townPath:areas[1][0],localityPath:areas[1][1],enabled:true},
+  {id:'example-disabled',phrase:'Old Market Hall',townPath:areas[0][0],localityPath:areas[0][2],enabled:false},
+  {id:'example-conflict-a',phrase:'Canal Mills',townPath:areas[2][0],localityPath:areas[2][1],enabled:true},
+  {id:'example-conflict-b',phrase:'Canal Mills',townPath:areas[2][0],localityPath:areas[2][2],enabled:true},
  ];
  const postcodes=['BF1 1AA','MW2 2BB','TT3 3CC'];
- const paths=seeds.map((seed,i)=>{const town=towns[i%3]!,branch=Math.floor(i/3)%3;return root+'/Sources/'+town.name+(branch===2?'':'/'+town.children[branch])+'/'+safeFileName(seed.brand+' - '+town.name+' - '+seed.street+' - '+postcodes[i%3])+'.md';});
- const parks=parkSeeds.map(seed=>root+'/Parking/'+towns[seed[1]]!.name+'/'+towns[seed[1]]!.children[seed[2]]+'/'+safeFileName(seed[0])+'.md');
+ const paths=seeds.map((seed,i)=>{const town=towns[i%3],branch=Math.floor(i/3)%3;return root+'/Sources/'+town.name+(branch===2?'':'/'+town.children[branch])+'/'+safeFileName(seed.brand+' - '+town.name+' - '+seed.street+' - '+postcodes[i%3])+'.md';});
+ const parks=parkSeeds.map(seed=>root+'/Parking/'+towns[seed[1]].name+'/'+towns[seed[1]].children[seed[2]]+'/'+safeFileName(seed[0])+'.md');
  const linked=seeds.map((_,i)=>{if(i%7===6)return[];const ti=i%3,p=ti===0?(i%5===0?2:0):ti===1?(i%5===0?5:3):6,a=ti===0?1:ti===1?4:7;return i%4===0?[p,a]:[p];});
  const drafts:CaptureDraft[]=[];
  const separateVisits=packVersion>=3?separateVisitRecords(root,paths):new Map<number,VisitRecord[]>();
  for(const[i,seed]of seeds.entries()){
-  const town=towns[i%3]!,branch=Math.floor(i/3)%3,area=areas[i%3]![branch===2?0:branch+1]!,pin=i===20||i===22?null:pinFor(i),type=seed.type??'Charity shop';
+  const town=towns[i%3],branch=Math.floor(i/3)%3,area=areas[i%3][branch===2?0:branch+1],pin=i===20||i===22?null:pinFor(i),type=seed.type??'Charity shop';
   const draft:CaptureDraft={captureId:'',kind:'shop',sourceType:type,name:seed.brand+' - '+(branch===2?town.name:town.children[branch]),
    address:seed.street+', '+(branch===2?'':town.children[branch]+', ')+town.name+' '+postcodes[i%3],
    url:listing(i,pin),website:'https://'+slug(seed.brand)+'.example.invalid/branches/'+slug(seed.street),telephone:'+44 1632 960'+String(i).padStart(3,'0'),coordinates:pin,
    googleRating:i===20?null:round(3.6+(i%7)*.2),googleReviewCount:i===20?0:18+i*13,
    topics:[seed.category+' ('+(5+i)+')','helpful staff ('+(12+i*2)+')','prices ('+(3+i%6)+')'],hours:i===22?[]:hoursFor(i),
-   capturedAt:CHECKED+'T10:00:00Z',street:seed.street,postcode:postcodes[i%3]!,brandTag:slug(seed.brand)};
+   capturedAt:CHECKED+'T10:00:00Z',street:seed.street,postcode:postcodes[i%3],brandTag:slug(seed.brand)};
   const raw=capture(draft,2,'Archived original creation evidence for this fictional source; this is not an additional pending clip.');
   draft.captureId=await hashText(root+'/Capture inbox/Original '+String(i+1).padStart(2,'0')+' - '+slug(seed.brand)+'.md\n'+raw);drafts.push(draft);
   files[root+'/Capture archive/'+draft.captureId+'.md']=raw;settings.captureReceipts[draft.captureId]=paths[i]!;
@@ -268,22 +269,22 @@ export async function buildExamplePack(requestedRoot:string,vaultName:string,pac
    google_rating:draft.googleRating,google_review_count:draft.googleReviewCount,google_checked:CHECKED,google_hours:draft.hours,google_hours_checked:draft.hours.length?CHECKED:null,
    google_review_topics:draft.topics,google_review_topics_checked:CHECKED,source_capture_id:draft.captureId,
    parking_on_site:i>=16&&i<=20?'yes':'no',on_site_parking_cost:i>=16&&i<=20?'free':'unknown',on_site_parking_availability:i>=16&&i<=20?'confirm collection slot':'not applicable',
-   parking_location:linked[i]!.length&&i%4!==0?wiki(parks[linked[i]![0]!]!):''};
+   parking_location:linked[i].length&&i%4!==0?wiki(parks[linked[i][0]]):''};
   if(i===1&&pin)props.coordinates=[round(pin[0]+.00009),round(pin[1]-.00007)];
   const count=packVersion>=3?0:i<8?3:i<16?2:0,entries=Array.from({length:count},(_,pass)=>visit(seed,i,pass)).reverse().join('');
   let body=bodyForPlace(draft).replace('## Visit log\n\n\n','## Visit log\n\n'+entries+'\n');
   body=body.replace('## Notes\n\n\n','## Notes\n\n### Stock and condition\n\n'+seed.stock+'\n\n### Typical prices\n\n'+seed.prices+'\n\n### Useful categories\n\n'+seed.category+'. '+seed.finds+'.\n\n### Remember next time\n\n'+seed.remember+'\n\n'+seed.aside+'\n\n'+(i===14?'This fictional branch is permanently closed. Preserve its history, but omit it from active maps and trips.\n\n':i===20||i===22?'The missing pin is intentional. A listing is not permission to substitute map-centre coordinates.\n\n':'')+(i===5?'The newest recorded entry describes an earlier visit. Last visited was explicitly kept at 2 October, independently of recording time.\n\n':''));
   if(packVersion>=3)body=body.replace(/## Visit log[\s\S]*?(?=## Notes)/,'')+'\n'+demonstrates(i===0?'Ten separate fictional visits compare five Mondays and five Fridays, including a backdated recording and observed Blue/Green label changes. Open Visits and insights; this source rating stays a separate current judgement.':i<16?'Two separate editable visits include optional counts, whole-haul potential and label evidence. Missing values stay unknown; source assessment and shortlist are independent.':'No visit is recorded. Listing claims and future intentions do not become sourcing outcomes.');
-  files[paths[i]!]=marked(props,body);
+  files[paths[i]]=marked(props,body);
  }
  for(const[i,seed]of parkSeeds.entries()){
-  const[name,ti,ci,cost,availability,notes]=seed,town=towns[ti]!,pin:Coordinates|null=i===7?null:[round(town.pin[0]!+.00019+i*.00011),round(town.pin[1]!-.00013-i*.00008)];
+  const[name,ti,ci,cost,availability,notes]=seed,town=towns[ti],pin:Coordinates|null=i===7?null:[round(town.pin[0]+.00019+i*.00011),round(town.pin[1]-.00013-i*.00008)];
   const served=linked.flatMap((values,index)=>values.includes(i)?[index]:[]);
-  const props={...placeProperties('parking',areas[ti]![ci+1]!),town:town.name,address:name+', '+town.children[ci]+', '+town.name+' (fictional)',
+  const props={...placeProperties('parking',areas[ti][ci+1]),town:town.name,address:name+', '+town.children[ci]+', '+town.name+' (fictional)',
    coordinates:pin??[],google_name:name+' - fictional parking',google_maps_url:'',google_checked:CHECKED,website:'https://parking.example.invalid/'+slug(name),
-   parking_cost:cost,parking_availability:availability,parking_checked:'2026-10-15',parking_for:served.map(index=>wiki(paths[index]!))};
-  const body=bodyForPlace(undefined,'parking').split('> [!info]')[0]!.replace('## Notes\n\n\n','## Notes\n\n'+notes+'\n\n### Sources served\n\n'+served.map(index=>'- '+wiki(paths[index]!)).join('\n')+'\n\n### Access and limits\n\nThese illustrative tariffs and usual availability are dated observations, not live parking information. Recheck restrictions in a real notebook. This reusable note can be selected independently for an outing without changing source preferences.\n');
-  files[parks[i]!]=marked(props,packVersion>=3?body.replace('## Visit log\n\n\n','')+'\n'+demonstrates('One reusable parking note can serve several sources, retain alternatives and be selected independently for an outing. Its tariff and availability are fictional dated observations.'):body);
+   parking_cost:cost,parking_availability:availability,parking_checked:'2026-10-15',parking_for:served.map(index=>wiki(paths[index]))};
+  const body=bodyForPlace(undefined,'parking').split('> [!info]')[0].replace('## Notes\n\n\n','## Notes\n\n'+notes+'\n\n### Sources served\n\n'+served.map(index=>'- '+wiki(paths[index])).join('\n')+'\n\n### Access and limits\n\nThese illustrative tariffs and usual availability are dated observations, not live parking information. Recheck restrictions in a real notebook. This reusable note can be selected independently for an outing without changing source preferences.\n');
+  files[parks[i]]=marked(props,packVersion>=3?body.replace('## Visit log\n\n\n','')+'\n'+demonstrates('One reusable parking note can serve several sources, retain alternatives and be selected independently for an outing. Its tariff and availability are fictional dated observations.'):body);
  }
  const outings=[
   {name:'A pocket of Brindleford',status:'planned',groups:[[0,[0,3]],[1,[6,9]],[2,[12,15]]],note:'A compact fictional town outing with shared parking. Reorder its groups or change sources; permanent shortlists and preferred parking stay independent.'},
@@ -292,8 +293,8 @@ export async function buildExamplePack(requestedRoot:string,vaultName:string,pac
   {name:'Thimbleton coats and curios',status:'finished',groups:[[6,[2,5]],[7,[8,11]],[-1,[14]]],note:'Finished fictional history retains visited and skipped progress. A closed branch and missing parking pin illustrate why historical records differ from current destinations.'},
  ] as const;
  for(const[oi,seed]of outings.entries()){
-  const groups=seed.groups.map(([pi,indices],gi)=>({id:'example-group-'+oi+'-'+gi,parkingPath:pi<0?'':wiki(parks[pi]!),
-   stops:indices.map((index,si)=>({id:'example-stop-'+oi+'-'+gi+'-'+si,sourcePath:wiki(paths[index]!),
+  const groups=seed.groups.map(([pi,indices],gi)=>({id:'example-group-'+oi+'-'+gi,parkingPath:pi<0?'':wiki(parks[pi]),
+   stops:indices.map((index,si)=>({id:'example-stop-'+oi+'-'+gi+'-'+si,sourcePath:wiki(paths[index]),
     status:oi===2&&gi===0&&si===0?'visited':oi===2&&gi===1&&si===0?'skipped':oi===3?(index===8?'skipped':'visited'):'pending',
     ...((oi===2&&((gi===0&&si===0)||(gi===1&&si===0)))||oi===3?{completedAt:'2026-10-15T13:00:00Z'}:{}),
     ...((oi===2&&gi===1&&si===0)||oi===3&&index===8?{skipReason:'Fictional example: no useful stock on this visit.'}:{})}))}));
@@ -301,16 +302,16 @@ export async function buildExamplePack(requestedRoot:string,vaultName:string,pac
    ...(packVersion>=2&&oi<2?{planning:{...(packVersion>=3?defaultPlanningOptions():legacyPlanningDefaults()),end:{kind:packVersion>=3&&oi===0?'last':'return'},date:'2026-10-17',departureTime:'09:00',timeZone:'Europe/London',start:{kind:'coordinates',coordinates:oi===0?[52.545,-2.46]:[52.60,-2.35],label:'Fictional starting point'},stopOverrides:oi===0?{'example-stop-0-0-0':{visitMinutes:30},'example-stop-0-1-1':{hours:{closed:false,intervals:[{open:'10:00',close:'16:30'}]}}}:{}}}:{}),
    ...(oi>=2?{startedAt:'2026-10-15T10:00:00Z'}:{}),...(oi===3?{finishedAt:'2026-10-15T15:00:00Z'}:{}),
    ...(oi===2?{draft:{operationId:'example-unsaved-visit-draft',stopId:'example-stop-2-0-1',input:{observations:'Fictional unfinished draft: useful blouses on the ordinary rail; inspect pale cuffs before deciding.',finds:'A silk-mix blouse worth checking.',nextTime:'Look at the ordinary rail before the premium hangers.',visitDate:'2026-10-16',updateLastVisited:false},updatedAt:'2026-10-16T12:40:00Z'}}:{})};
-  if(packVersion>=3&&oi===3){const detailed=separateVisits.get(2)![1]!;Object.assign(groups[0]!.stops[0]!,{visitPath:wiki(detailed.path),visitId:detailed.id});}
+  if(packVersion>=3&&oi===3){const detailed=separateVisits.get(2)![1];Object.assign(groups[0].stops[0],{visitPath:wiki(detailed.path),visitId:detailed.id});}
   files[root+'/Outings/'+safeFileName(seed.name)+'.md']=marked({tags:['sourcing-outing'],cssclasses:['charity-sourcing-outing'],outing},block('outing')+'## Notes\n\n'+(packVersion===1?seed.note.replace('The other destinations fit a larger Maps journey; choose Mobile browser to demonstrate multipart links.','Five other destinations show multipart links.'):seed.note)+'\n');
  }
  const pending:[string,CaptureDraft,1|2,string][]=[
-  ['01 - New source complete (v2)',{...drafts[0]!,captureId:'',name:'Spare Button Society - Riverside',address:'27 Loom Lane, Riverside, Brindleford BF1 4AA',url:'https://www.google.com/maps/place/Fictional_Spare_Button/data=!4m5!3m4!1sEXAMPLE-NEW-COMPLETE!8m2!3d52.551!4d-2.451',coordinates:[52.551,-2.451],website:'https://spare-button.example.invalid/',telephone:'+44 1632 960099',capturedAt:'2026-10-17T10:00:00Z',googleRating:4.2,googleReviewCount:27},2,'A complete fictional clip for a new source; normal creation should open.'],
-  ['02 - New source missing details (v1)',{...drafts[0]!,captureId:'',name:'Odd Sock Exchange',address:'',url:'https://maps.app.goo.gl/EXAMPLE-NO-LOCATION',coordinates:null,website:'',telephone:'',googleRating:null,googleReviewCount:null,hours:[],topics:[],capturedAt:'2026-10-17T10:10:00Z'},1,'An incomplete fictional legacy clip; town and pin are unknown, not inferred.'],
-  ['03 - Refresh complete',{...drafts[0]!,name:'Second Sunrise - Riverside textile room',website:'https://second-sunrise.example.invalid/updated',telephone:'+44 1632 960080',url:listing(0,[52.55025,-2.44975]),coordinates:[52.55025,-2.44975],googleRating:4.7,googleReviewCount:88,topics:['wool knitwear (26)','helpful staff (42)','prices (14)'],hours:hoursFor(0).map(row=>row.replace('09:30','09:00')),capturedAt:'2026-10-17T11:00:00Z'},2,'A complete refresh; changed pin stays unchecked by default.'],
-  ['04 - Refresh partial',{...drafts[1]!,address:'',website:'',telephone:'',googleRating:4.9,googleReviewCount:null,hours:['Monday, 10:00 to 16:00'],topics:['outdoor layers (7)'],capturedAt:'2026-10-17T11:15:00Z'},2,'A partial refresh; half a review pair and incomplete hours cannot erase current information. The manually corrected source pin remains independent.'],
-  ['05 - Refresh older snapshot',{...drafts[2]!,googleRating:3.8,googleReviewCount:14,topics:['dresses (3)','prices (2)'],capturedAt:'2026-06-12T10:00:00Z'},1,'An older snapshot; checked-date warnings matter before selecting updates.'],
-  ['06 - Refresh no change',{...drafts[3]!},2,'An exact repeat; Keep existing and archive capture can dismiss it without changing assessment.'],
+  ['01 - New source complete (v2)',{...drafts[0],captureId:'',name:'Spare Button Society - Riverside',address:'27 Loom Lane, Riverside, Brindleford BF1 4AA',url:'https://www.google.com/maps/place/Fictional_Spare_Button/data=!4m5!3m4!1sEXAMPLE-NEW-COMPLETE!8m2!3d52.551!4d-2.451',coordinates:[52.551,-2.451],website:'https://spare-button.example.invalid/',telephone:'+44 1632 960099',capturedAt:'2026-10-17T10:00:00Z',googleRating:4.2,googleReviewCount:27},2,'A complete fictional clip for a new source; normal creation should open.'],
+  ['02 - New source missing details (v1)',{...drafts[0],captureId:'',name:'Odd Sock Exchange',address:'',url:'https://maps.app.goo.gl/EXAMPLE-NO-LOCATION',coordinates:null,website:'',telephone:'',googleRating:null,googleReviewCount:null,hours:[],topics:[],capturedAt:'2026-10-17T10:10:00Z'},1,'An incomplete fictional legacy clip; town and pin are unknown, not inferred.'],
+  ['03 - Refresh complete',{...drafts[0],name:'Second Sunrise - Riverside textile room',website:'https://second-sunrise.example.invalid/updated',telephone:'+44 1632 960080',url:listing(0,[52.55025,-2.44975]),coordinates:[52.55025,-2.44975],googleRating:4.7,googleReviewCount:88,topics:['wool knitwear (26)','helpful staff (42)','prices (14)'],hours:hoursFor(0).map(row=>row.replace('09:30','09:00')),capturedAt:'2026-10-17T11:00:00Z'},2,'A complete refresh; changed pin stays unchecked by default.'],
+  ['04 - Refresh partial',{...drafts[1],address:'',website:'',telephone:'',googleRating:4.9,googleReviewCount:null,hours:['Monday, 10:00 to 16:00'],topics:['outdoor layers (7)'],capturedAt:'2026-10-17T11:15:00Z'},2,'A partial refresh; half a review pair and incomplete hours cannot erase current information. The manually corrected source pin remains independent.'],
+  ['05 - Refresh older snapshot',{...drafts[2],googleRating:3.8,googleReviewCount:14,topics:['dresses (3)','prices (2)'],capturedAt:'2026-06-12T10:00:00Z'},1,'An older snapshot; checked-date warnings matter before selecting updates.'],
+  ['06 - Refresh no change',{...drafts[3]},2,'An exact repeat; Keep existing and archive capture can dismiss it without changing assessment.'],
  ];
  for(const[name,draft,version,description]of pending){
   const path=root+'/Capture inbox/'+name+'.md',raw=capture(draft,version,description);files[path]=raw;
@@ -319,7 +320,7 @@ export async function buildExamplePack(requestedRoot:string,vaultName:string,pac
  references(files,root,packVersion);
  if(packVersion>=3){
   addVisitExamples(files,root,separateVisits);
-  files[root+'/Reference/Journey planning.md']=files[root+'/Reference/Journey planning.md']!.replace('and return-to-start planning.','with one last-source finish and one explicit return to start.');
+  files[root+'/Reference/Journey planning.md']=files[root+'/Reference/Journey planning.md'].replace('and return-to-start planning.','with one last-source finish and one explicit return to start.');
   for(const path of Object.keys(files).filter(path=>path.startsWith(root+'/Outings/')&&path.endsWith('.md')))files[path]+='\n'+demonstrates('Outing progress stays independent from source shortlist and separate visit details. One finished stop links its saved visit; visited-without-details and the active unfinished draft remain distinct.');
   for(const path of[root+'/Home.md',root+'/Guide.md',root+'/Reference/Overview.md'])files[path]+='\n'+demonstrates('Browse [['+root+'/Visits|Visits and insights]] for forty separate editable visits, weekday comparisons and observed stock-label evidence. The optional guide points to the same records and can be deleted independently.');
  }

@@ -1,3 +1,4 @@
+import { markInputModal, modalWindow } from './modal-layout';
 import { Component, Modal, SuggestModal, TFile } from 'obsidian';
 import type { NotebookContext } from '../notebook-context';
 import type { VisitRecord } from '../visits/types';
@@ -16,9 +17,9 @@ export class VisitInsightsModal extends Modal {
   private owner=new Component();private closed=false;private generation=0;private timer?:number;
   private state:InsightsState;
   constructor(private context:NotebookContext,sourcePath?:string) {super(context.app);this.state={sourcePath};}
-  onOpen() {
+  onOpen() { markInputModal(this);
     this.titleEl.setText('Visit insights');this.modalEl.addClass('charity-insights-modal');this.owner.load();void this.render();
-    const refresh=()=>{window.clearTimeout(this.timer);this.timer=window.setTimeout(()=>void this.render(),180);};
+    const refresh=()=>{modalWindow(this).clearTimeout(this.timer);this.timer=modalWindow(this).setTimeout(()=>void this.render(),180);};
     for(const event of ['create','modify','delete','rename'] as const) this.owner.registerEvent(this.context.app.vault.on(event as 'modify',refresh));
   }
   private async render() {
@@ -26,7 +27,7 @@ export class VisitInsightsModal extends Modal {
     try {await renderVisitInsights(this.context,this.owner,this.contentEl,this.state,()=>!this.closed&&generation===this.generation);}
     catch(error) {if(!this.closed&&generation===this.generation)this.contentEl.createEl('p',{text:errorText(error),cls:'charity-error'});}
   }
-  onClose(){this.closed=true;this.generation++;window.clearTimeout(this.timer);this.owner.unload();}
+  onClose(){this.closed=true;this.generation++;modalWindow(this).clearTimeout(this.timer);this.owner.unload();}
 }
 export async function renderVisitInsights(context:NotebookContext,owner:Component,el:HTMLElement,state:InsightsState={},isCurrent=()=>true):Promise<void> {
   const [inspection,places,areas]=await Promise.all([context.store.visits.inspect(),context.store.listPlaces(),context.store.listLocalities()]);

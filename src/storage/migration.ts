@@ -42,7 +42,7 @@ function resolveTarget(app: App, target: string, from: string, allFiles: TFile[]
   const relative = direct(normalizePath(from.split('/').slice(0, -1).join('/') + '/' + decoded));
   if (relative) return relative;
   const candidates = allFiles.filter(file => file.path.endsWith('/' + decoded) || file.path.endsWith('/' + decoded + '.md'));
-  return candidates.length === 1 ? candidates[0]!.path : null;
+  return candidates.length === 1 ? candidates[0].path : null;
 }
 export function rewriteLinks(app: App, text: string, from: string, to: string, mapping: ReadonlyMap<string, string>, allFiles: TFile[]): string {
   let next = text.replace(/\[\[([^\]\r\n]+)\]\]/g, (whole, raw: string) => {
@@ -98,7 +98,7 @@ export function rewritePathPrefixes(text: string, prefixes: [string, string][]):
 async function readBytes(app: App, file: TFile): Promise<ArrayBuffer> {
   if (typeof app.vault.readBinary === 'function') return app.vault.readBinary(file);
   if (!textExtensions.has(file.extension)) throw new Error('Binary backup support is required for ' + file.path);
-  return new TextEncoder().encode(await app.vault.read(file)).buffer as ArrayBuffer;
+  return new TextEncoder().encode(await app.vault.read(file)).buffer;
 }
 function decodeText(bytes: ArrayBuffer | Uint8Array): string { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); }
 async function bytesHash(bytes: ArrayBuffer): Promise<string> {
@@ -188,7 +188,8 @@ export async function prepareMove(app: App, settings: Settings, options: Prepare
     rewrites: entries.filter(e => e.text !== undefined).map(e => e.from), conflicts: [...new Set(conflicts)], warnings: [],
     entries, inventory: allFiles.map(file => file.path).sort(), observed, captureSnapshots,
     ...(options.ignoredPaths ? { ignoredPaths: options.ignoredPaths } : {}), ...(options.opaqueSubtrees ? { opaqueSubtrees: options.opaqueSubtrees } : {}), ...(options.writeBoundary ? { writeBoundary: options.writeBoundary } : {}), ...(options.locality ? { locality: options.locality } : {}) };
-  if (app.vault.getAbstractFileByPath(fromRoot + '/.obsidian')) preview.warnings.push('The nested vault settings stay in ' + fromRoot + '/.obsidian. Open the notebook inside the current vault.');
+  const nestedConfig = fromRoot + '/' + app.vault.configDir;
+  if (app.vault.getAbstractFileByPath(nestedConfig)) preview.warnings.push('The nested vault settings stay in ' + nestedConfig + '. Open the notebook inside the current vault.');
   return preview;
 }
 
@@ -208,7 +209,7 @@ async function hintTownPath(app: App, target: string, root: string): Promise<str
       else {
         const candidates = app.vault.getMarkdownFiles().filter(record => record.path.startsWith(root + '/Localities/') && record.basename === parent.replace(/\.md$/, ''));
         if (candidates.length !== 1) return null;
-        path = candidates[0]!.path;
+        path = candidates[0].path;
       }
     } catch { return null; }
   }
@@ -251,7 +252,7 @@ export async function executeMove(app: App, settings: Settings, save: () => Prom
   try {
     await ensureFolder(app, backupRoot);
     for (let i = 0; i < journal.entries.length; i++) {
-      const entry = journal.entries[i]!, bytes = await readBytes(app, fileAt(app, entry.from));
+      const entry = journal.entries[i], bytes = await readBytes(app, fileAt(app, entry.from));
       if (await bytesHash(bytes) !== entry.beforeHash) throw new Error('A file changed before backup: ' + entry.from);
       const backupPath = backupRoot + '/' + String(i).padStart(5, '0') + '.backup';
       if (typeof app.vault.createBinary === 'function') await app.vault.createBinary(backupPath, bytes);
@@ -261,7 +262,7 @@ export async function executeMove(app: App, settings: Settings, save: () => Prom
       entry.backupPath = backupPath; entry.phase = 'backed-up'; await save();
     }
     await app.vault.create(backupRoot + '/manifest.json', JSON.stringify(journal, null, 2));
-    settings.migration!.status = 'moving'; await save();
+    settings.migration.status = 'moving'; await save();
     for (const entry of journal.entries) {
       let file = fileAt(app, entry.from);
       if (await bytesHash(await readBytes(app, file)) !== entry.beforeHash) throw new Error('A file changed during the move: ' + entry.from);

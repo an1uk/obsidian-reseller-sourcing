@@ -7,6 +7,7 @@ import { MapConfig, MapMarker, MapMarkerProperties } from './types';
 import { coordinateFromValue, formatCoordinates, toLngLat } from './utils';
 import { PopupManager } from './popup';
 import { nearestTouchMarker } from './touch';
+import { copyTextOrShow } from '../platform/clipboard';
 
 const DEFAULT_MARKER_COLOR = 'var(--charity-map-marker-background)';
 
@@ -115,7 +116,7 @@ export class MarkerManager {
 		// Update or create the markers source
 		const source = this.map.getSource<GeoJSONSource>('markers');
 		if (source) {
-			source.setData({
+			await source.setData({
 				type: 'FeatureCollection',
 				features,
 			});
@@ -214,11 +215,11 @@ export class MarkerManager {
 		if (cached !== undefined) return cached;
 
 		// Create a temporary hidden element to resolve CSS variables
-		const tempEl = document.body.createDiv('charity-map-color-probe');
+		const tempEl = this.mapEl.ownerDocument.body.createDiv('charity-map-color-probe');
 		tempEl.setCssStyles({ color });
 
 		// Get the computed color value
-		const computedColor = getComputedStyle(tempEl).color;
+		const computedColor = this.mapEl.win.getComputedStyle(tempEl).color;
 
 		// Clean up
 		tempEl.remove();
@@ -389,7 +390,8 @@ export class MarkerManager {
 		if (Platform.isMobileApp) {
 			this.map.on('click', event => {
 				if (event.defaultPrevented || event.originalEvent?.defaultPrevented || !this.map) return;
-				const marker = nearestTouchMarker(event.point, this.markers, candidate => this.map!.project(toLngLat(candidate.coordinates)));
+				const map = this.map;
+				const marker = nearestTouchMarker(event.point, this.markers, candidate => map.project(toLngLat(candidate.coordinates)));
 				if (!marker) return;
 				const data = this.getData(), config = this.getMapConfig();
 				if (!config) return;
@@ -459,7 +461,7 @@ export class MarkerManager {
 				.setTitle('Copy coordinates')
 				.setIcon('map-pin')
 				.onClick(() => {
-					void navigator.clipboard.writeText(formatCoordinates(lat, lng));
+					void copyTextOrShow(this.app, formatCoordinates(lat, lng), 'Coordinates');
 				}));
 
 			menu.addItem(item => item

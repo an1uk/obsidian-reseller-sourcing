@@ -29,12 +29,12 @@ export function readGoogleHours(text: string): GoogleHoursSnapshot {
   const start = lines.findIndex(line => /^> \[!info\]-? Opening hours and Google details[ \t]*$/.test(line));
   if (start < 0) return { hours: [], checked: '', legacy: false };
   const callout: string[] = [];
-  for (let i = start + 1; i < lines.length && /^>/.test(lines[i]!); i++) callout.push(lines[i]!);
+  for (let i = start + 1; i < lines.length && /^>/.test(lines[i]); i++) callout.push(lines[i]);
   const heading = callout.findIndex(line => /^> \*\*Opening hours\*\*[ \t]*$/.test(line));
   const rows: string[] = [];
   if (heading >= 0) for (const line of callout.slice(heading + 1)) {
     if (/^> \*\*/.test(line)) break;
-    const row = /^> - (.+)$/.exec(line); if (row) rows.push(row[1]!.trim());
+    const row = /^> - (.+)$/.exec(line); if (row) rows.push(row[1].trim());
   }
   const hours = validGoogleHours(rows);
   if (!hours.length) return { hours: [], checked: '', legacy: false };

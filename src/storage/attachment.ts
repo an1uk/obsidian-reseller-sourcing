@@ -1,3 +1,4 @@
+import { propertyText } from '../domain/guards';
 import { readVisitRecord } from '../visits/store';
 import type { App, TFile } from 'obsidian';
 import { parse } from 'yaml';
@@ -6,8 +7,10 @@ import { captureRefreshReceipts, type CaptureRefreshReceipt } from '../capture/r
 import { validateRootPath } from '../domain';
 import { resolveLocalities } from '../domain/hierarchy';
 import type { CaptureSnapshot, MoveJournal, Settings } from '../types';
-import { ASSET_VERSION, baseText, bundledAssets, VIEW_TYPE } from './assets';
+import { ASSET_VERSION, bundledAssets, VIEW_TYPE } from './assets';
 import { hashText, linkPath, readNote } from './markdown';
+import { hasControlCharacters, isRecord, isUnknownArray } from '../domain/guards';
+import { parseSettings } from '../platform/settings-data';
 
 export interface AttachmentPreview {
   root: string; fingerprint: string; recognized: boolean;
@@ -23,9 +26,9 @@ export interface AttachmentInspection {
 }
 const isFile = (value: unknown): value is TFile => !!value && typeof value === 'object' && 'extension' in value;
 const capturePath = (root: string, path: string) => path.startsWith(root + '/Capture inbox/') && path.endsWith('.md');
-const validSnapshot = (value: unknown): value is CaptureSnapshot => !!value && typeof value === 'object' &&
-  typeof (value as CaptureSnapshot).captureId === 'string' && !!(value as CaptureSnapshot).captureId &&
-  typeof (value as CaptureSnapshot).revision === 'string' && /^[a-f0-9]{64}$/.test((value as CaptureSnapshot).revision);
+const validSnapshot = (value: unknown): value is CaptureSnapshot => isRecord(value) &&
+  typeof value.captureId === 'string' && !!value.captureId &&
+  typeof value.revision === 'string' && /^[a-f0-9]{64}$/.test(value.revision);
 async function fileHash(app: App, file: TFile): Promise<string> {
   if (typeof app.vault.readBinary === 'function') {
     const digest = await crypto.subtle.digest('SHA-256', await app.vault.readBinary(file));
@@ -36,8 +39,8 @@ async function fileHash(app: App, file: TFile): Promise<string> {
 function recognizedBase(raw: string | undefined, root: string): boolean {
   if (!raw) return false;
   try {
-    const base = parse(raw);
-    return !!base && Array.isArray(base.views) && base.views.some((view: { type?: string }) => view?.type === VIEW_TYPE) &&
+    const base: unknown = parse(raw);
+    return isRecord(base) && isUnknownArray(base.views) && base.views.some(view => isRecord(view) && view.type === VIEW_TYPE) &&
       JSON.stringify(base.filters ?? {}).includes(root + '/');
   } catch { return false; }
 }
@@ -49,13 +52,14 @@ function sourceKind(path: string, properties: Record<string, unknown>, root: str
   return (path.startsWith(root + '/Places/') || path.startsWith(root + '/Parking/')) && tags.includes('parking') ? 'parking' : null;
 }
 const isPath = (path: unknown): path is string => typeof path === 'string' && !!path && !path.startsWith('/') &&
-  !/[\\\x00-\x1f]/.test(path) && !path.split('/').some(segment => !segment || segment === '.' || segment === '..');
+  !path.includes('\\') && !hasControlCharacters(path, false) && !path.split('/').some(segment => !segment || segment === '.' || segment === '..');
 function journalShape(value: unknown): value is MoveJournal {
-  if (!value || typeof value !== 'object') return false;
-  const journal = value as MoveJournal;
-  return isPath(journal.fromRoot) && isPath(journal.toRoot) && Array.isArray(journal.entries) &&
-    journal.entries.every(entry => !!entry && isPath(entry.from) && isPath(entry.to) &&
-      /^[a-f0-9]{64}$/.test(entry.beforeHash) && /^[a-f0-9]{64}$/.test(entry.afterHash));
+  try {
+    const journal = parseSettings({ migration: value }).migration;
+    return !!journal && isPath(journal.fromRoot) && isPath(journal.toRoot) &&
+      journal.entries.every(entry => isPath(entry.from) && isPath(entry.to) &&
+        /^[a-f0-9]{64}$/.test(entry.beforeHash) && /^[a-f0-9]{64}$/.test(entry.afterHash));
+  } catch { return false; }
 }
 /** Inspect only. A second device must never repair or rewrite an existing notebook while attaching. */
 export async function inspectNotebook(app: App, settings: Settings, requestedRoot: string): Promise<AttachmentInspection> {
@@ -77,7 +81,7 @@ export async function inspectNotebook(app: App, settings: Settings, requestedRoo
     catch { warnings.push('Invalid properties were left untouched: ' + file.path); }
   }
   const practiceState = texts.get(root + '/System/Practice state.json');
-  if (practiceState) { try { if (JSON.parse(practiceState).format === 'reseller-sourcing-examples') blockers.push('Examples is a fictional practice notebook. Open it through Examples instead of attaching it as your real notebook.'); } catch { blockers.push('The practice state cannot be inspected. Do not attach Examples as a real notebook.'); } }
+  if (practiceState) { try { const state: unknown = JSON.parse(practiceState); if (isRecord(state) && state.format === 'reseller-sourcing-examples') blockers.push('Examples is a fictional practice notebook. Open it through Examples instead of attaching it as your real notebook.'); } catch { blockers.push('The practice state cannot be inspected. Do not attach Examples as a real notebook.'); } }
   const counts = { sources: 0, parking: 0, areas: 0, pendingCaptures: 0 };
   const placePaths: string[] = [], captures: string[] = [];
   const receipts = new Map<string, string[]>();
@@ -95,11 +99,11 @@ export async function inspectNotebook(app: App, settings: Settings, requestedRoo
   counts.pendingCaptures = captures.length;
   const areaInputs = [...parsed].filter(([path, properties]) => properties.sourcing_example !== true && (path.startsWith(root + '/Places/') || path.startsWith(root + '/Localities/')) &&
     Array.isArray(properties.tags) && properties.tags.includes('sourcing-locality')).map(([path, properties]) => ({
-      path, name: String(properties.area_name || path.split('/').at(-1)!.slice(0, -3)), parentPath: linkPath(properties.parent_locality),
+      path, name: propertyText(properties.area_name, path.split('/').at(-1)!.slice(0, -3)), parentPath: linkPath(properties.parent_locality),
     }));
   for (const area of areaInputs) if (area.parentPath && !area.parentPath.includes('/')) {
     const matches = areaInputs.filter(candidate => candidate.name === area.parentPath.replace(/\.md$/, ''));
-    if (matches.length === 1) area.parentPath = matches[0]!.path;
+    if (matches.length === 1) area.parentPath = matches[0].path;
   }
   const localities = resolveLocalities(areaInputs); counts.areas = localities.length;
   if (localities.length !== areaInputs.length) warnings.push('Some area links are invalid or ambiguous; they were left untouched.');
@@ -115,7 +119,7 @@ export async function inspectNotebook(app: App, settings: Settings, requestedRoo
   }
   for (const paths of visitIds.values()) if (paths.length > 1) warnings.push('Duplicate visit identities need review; no visit was changed: ' + paths.join(', '));
   for (const [path, raw] of texts) if (path.startsWith(root + '/System/Visit operations/') && path.endsWith('.json')) {
-    try { const operation = JSON.parse(raw); if (operation.stage !== 'complete' && operation.stage !== 'cancelled') warnings.push('A visit save needs explicit recovery after attachment; it was not replayed: ' + path); }
+    try { const operation: unknown = JSON.parse(raw); if (!isRecord(operation) || operation.stage !== 'complete' && operation.stage !== 'cancelled') warnings.push('A visit save needs explicit recovery after attachment; it was not replayed: ' + path); }
     catch { warnings.push('A visit recovery record needs review; it was left untouched: ' + path); }
   }
   const hasSystem = recognizedBase(texts.get(root + '/System/Sources.base'), root) ||
@@ -149,10 +153,10 @@ export async function inspectNotebook(app: App, settings: Settings, requestedRoo
   for (const [path, snapshot] of Object.entries(settings.captureSnapshots ?? {})) addEvidence(path, snapshot);
   const manifestEvidence: [string, string][] = [];
   for (const file of allFiles.filter(file => /\/System\/Migration backups\/[^/]+\/manifest\.json$/.test(file.path))) {
-    let journal: MoveJournal, raw: string;
+    let journal: unknown, raw: string;
     try { raw = await app.vault.read(file); journal = JSON.parse(raw); }
     catch { if (file.path.startsWith(root + '/')) blockers.push('A migration record cannot be inspected: ' + file.path); continue; }
-    if (!journal || typeof journal !== 'object' || (journal.fromRoot !== root && journal.toRoot !== root)) continue;
+    if (!isRecord(journal) || (journal.fromRoot !== root && journal.toRoot !== root)) continue;
     manifestEvidence.push([file.path, await hashText(raw)]);
     if (!journalShape(journal)) { blockers.push('A migration record is incomplete or invalid; inspect it on the originating desktop: ' + file.path); continue; }
     let completed: 'completed' | 'rolled-back' | null = null;
@@ -163,8 +167,8 @@ export async function inspectNotebook(app: App, settings: Settings, requestedRoo
       const receiptRaw = await app.vault.read(receiptFile);
       manifestEvidence.push([receiptPath, await hashText(receiptRaw)]);
       try {
-        const receipt = JSON.parse(receiptRaw);
-        if (receipt.schema === 1 && receipt.id === journal.id && receipt.fromRoot === journal.fromRoot &&
+        const receipt: unknown = JSON.parse(receiptRaw);
+        if (isRecord(receipt) && receipt.schema === 1 && receipt.id === journal.id && receipt.fromRoot === journal.fromRoot &&
           receipt.toRoot === journal.toRoot && receipt.state === state && receipt.manifestHash === await hashText(raw)) completed = state;
         else blockers.push('A migration completion record cannot be verified: ' + receiptPath);
       } catch { blockers.push('A migration completion record cannot be read: ' + receiptPath); }

@@ -1,7 +1,8 @@
+import { propertyText } from '../domain/guards';
 import { Setting } from 'obsidian';
 import type { NotebookContext } from '../notebook-context';
 import type { PlaceRecord, LocalityRecord } from '../types';
-import type { OutingGroup, OutingRecord, OutingStop } from '../outings/types';
+import type { OutingGroup, OutingStop } from '../outings/types';
 import type { OutingPreparation } from './types';
 import { PreparationModal } from './preparation-modal';
 import { button, details, PickModal } from '../ui';
@@ -45,7 +46,7 @@ export class OutingPreparationModal extends PreparationModal<OutingPreparation> 
       if (existing.operation || existing.draft) throw Error('Finish the saved visit before changing this outing.');
       d.groups = structuredClone(existing.groups); d.name = existing.name; d.planning = existing.planning; d.existingRevision = existing.revision;
     }
-    this.titleEl.setText(['Choose places', 'Review journey', 'Ready to go'][d.step - 1]!);
+    this.titleEl.setText(['Choose places', 'Review journey', 'Ready to go'][d.step - 1]);
     const steps = this.contentEl.createDiv({ cls: 'charity-preparation-steps', attr: { 'aria-label': 'Preparation stage' } });
     ['Choose places', 'Review journey', 'Ready to go'].forEach((label, i) => steps.createSpan({ text: (i + 1) + '. ' + label, cls: i + 1 === d.step ? 'is-current' : '', attr: i + 1 === d.step ? { 'aria-current': 'step' } : {} }));
     button(this.contentEl, 'Back', () => d.step > 1 ? this.stage((d.step - 1) as 1 | 2) : this.close());
@@ -69,7 +70,7 @@ export class OutingPreparationModal extends PreparationModal<OutingPreparation> 
         (!d.filter.text || [p.name, p.properties.address, p.properties.comments].join(' ').toLocaleLowerCase().includes(d.filter.text.toLocaleLowerCase())));
       if (d.filter.view === 'map') {
         mountPlaceMap(this.owner, results, { ...this.context.mapHost, openFile: path => { const place = choices.find(p => p.path === path); return place ? this.select(place) : this.context.openFile(path); } }, { records: choices, selectionLabel: 'Add to outing' });
-      } else for (const p of choices) { const row = results.createDiv('charity-source-choice'); const text = row.createDiv(); text.createEl('strong', { text: p.name }); text.createEl('p', { text: String(p.properties.comments || formatRating(p.properties.rating)), cls: 'charity-hint' }); button(row, 'Add', () => this.select(p)).setAttribute('aria-label', 'Add ' + p.name); }
+      } else for (const p of choices) { const row = results.createDiv('charity-source-choice'); const text = row.createDiv(); text.createEl('strong', { text: p.name }); text.createEl('p', { text: propertyText(p.properties.comments, formatRating(p.properties.rating)), cls: 'charity-hint' }); button(row, 'Add', () => this.select(p)).setAttribute('aria-label', 'Add ' + p.name); }
       if (!choices.length) results.createEl('p', { text: 'No more matching places. Change the area, shortlist or search.' });
     };
     search.oninput = () => { d.filter.text = search.value; this.changed(); if (d.filter.view === 'list') draw(); };
@@ -102,13 +103,13 @@ export class OutingPreparationModal extends PreparationModal<OutingPreparation> 
     }
     const ordering = details(el, 'Change the order');
     d.groups.forEach((g, i) => {
-      const row = ordering.createDiv('charity-compact-row'); row.createSpan({ text: g.parkingPath ? this.name(g.parkingPath) : this.name(g.stops[0]!.sourcePath) });
-      const up = button(row, 'Earlier', () => { [d.groups[i - 1], d.groups[i]] = [d.groups[i]!, d.groups[i - 1]!]; return this.redraw(); });
+      const row = ordering.createDiv('charity-compact-row'); row.createSpan({ text: g.parkingPath ? this.name(g.parkingPath) : this.name(g.stops[0].sourcePath) });
+      const up = button(row, 'Earlier', () => { [d.groups[i - 1], d.groups[i]] = [d.groups[i], d.groups[i - 1]]; return this.redraw(); });
       up.disabled = i === 0 || g.stops.some(s => s.status !== 'pending') || d.groups[i - 1]?.stops.some(s => s.status !== 'pending') === true;
-      g.stops.forEach((s, j) => { const line = ordering.createDiv('charity-compact-row'); line.createSpan({ text: this.name(s.sourcePath) }); const before = button(line, 'Earlier within group', () => { [g.stops[j - 1], g.stops[j]] = [g.stops[j]!, g.stops[j - 1]!]; return this.redraw(); }); before.disabled = j === 0 || s.status !== 'pending' || g.stops[j - 1]?.status !== 'pending'; });
+      g.stops.forEach((s, j) => { const line = ordering.createDiv('charity-compact-row'); line.createSpan({ text: this.name(s.sourcePath) }); const before = button(line, 'Earlier within group', () => { [g.stops[j - 1], g.stops[j]] = [g.stops[j], g.stops[j - 1]]; return this.redraw(); }); before.disabled = j === 0 || s.status !== 'pending' || g.stops[j - 1]?.status !== 'pending'; });
     });
     const improve = button(el, 'Improve journey', () => new OutingPlannerModal(this.context, {
-      draft: () => { if (this.closed) throw Error('Preparation closed.'); return { id: this.draft.id, path: d.existingPath ?? '', name: this.outingName(), status: 'planned', createdAt: '', revision: d.existingRevision ?? '', groups: structuredClone(d.groups), planning: d.planning } as OutingRecord; },
+      draft: () => { if (this.closed) throw Error('Preparation closed.'); return { id: this.draft.id, path: d.existingPath ?? '', name: this.outingName(), status: 'planned', createdAt: '', revision: d.existingRevision ?? '', groups: structuredClone(d.groups), planning: d.planning }; },
       onApplyDraft: (groups, planning) => { if (this.closed) throw Error('Preparation closed.'); d.groups = structuredClone(groups); d.planning = structuredClone(planning); void this.redraw(); },
     }).open()); improve.disabled = !!d.unresolved.length;
     const next = button(el, 'Ready to go', () => this.stage(3), true); next.disabled = !!d.unresolved.length || stops(d.groups).some(s => !this.places.some(p => p.path === s.sourcePath));

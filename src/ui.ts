@@ -1,3 +1,4 @@
+import { markInputModal } from './ui/modal-layout';
 import { StructuredVisitModal as VisitModal, renderVisitHistory } from './ui/visits';
 import { VisitInsightsModal } from './ui/visit-insights';
 export { VisitModal };
@@ -5,14 +6,13 @@ import { distanceFromKm, distanceToKm, formatDistance, normaliseDistanceUnit, ty
 import { readGoogleHours, readGoogleTopics, validSnapshotDate } from './domain/google-details';
 import { Component, Modal, Notice, Platform, Setting, SuggestModal, TFile } from 'obsidian';
 import type { NotebookContext } from './notebook-context';
-import type { AreaHint, AreaSelection, CaptureDraft, Coordinates, LocalityRecord, PlaceKind, PlaceRecord, VisitInput } from './types';
+import type { AreaHint, CaptureDraft, Coordinates, LocalityRecord, PlaceKind, PlaceRecord } from './types';
 import { canonicalPlaceIdentity, formatRating, googleMapsUrl, localitySuggestions, navigationUrl, parseGooglePlaceUrl, resolveParking, safeFileName, validateCoordinates, validateRootPath, websiteUrl, telephoneUrl } from './domain';
 import { addressParts, getAddressHints } from './capture';
 import { AttachNotebookModal } from './ui/attach-notebook';
 import { copyTextOrShow } from './platform/clipboard';
 import { THIRD_PARTY_NOTICES } from './credits';
 import { AreaEditor, areaSelectionFor, selectedAreaPath, areaSegments } from './ui/area-controls';
-import { localDate } from './storage/markdown';
 import { mountPlaceMap, type PlaceMap } from './map';
 
 export function button(parent: HTMLElement, text: string, run: () => unknown, primary = false): HTMLButtonElement {
@@ -20,6 +20,10 @@ export function button(parent: HTMLElement, text: string, run: () => unknown, pr
   b.onclick = async () => { b.disabled = true; try { await run(); } catch (e) { new Notice(errorText(e)); } finally { b.disabled = false; } }; return b;
 }
 export function errorText(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+/** Malformed structured frontmatter must not become "[object Object]" in a field. */
+export function propertyText(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : typeof value === 'number' || typeof value === 'boolean' ? String(value) : fallback;
+}
 export function external(plugin: NotebookContext, parent: HTMLElement, text: string, url: string): void {
   if (!url) return;
   if (plugin.externalActions === 'preview') {
@@ -40,7 +44,7 @@ export function renderContextBanner(plugin: NotebookContext, parent: HTMLElement
   if (plugin.kind !== 'examples' || parent.querySelector(':scope > .charity-examples-banner')) return;
   const banner = parent.createDiv({ cls: 'charity-examples-banner charity-empty-state', attr: { role: 'note' } });
   banner.createEl('strong', { text: 'Examples: fictional practice data' });
-  banner.createEl('p', { text: 'Changes stay in Examples. External actions preview destinations.', cls: 'charity-hint' });
+  banner.createEl('p', { text: 'Practice changes stay here. External actions preview destinations.', cls: 'charity-hint' });
 }
 export function renderExamplesEntry(plugin: NotebookContext, parent: HTMLElement): void {
   if (plugin.kind === 'examples') {
@@ -55,7 +59,7 @@ export function renderExamplesReference(plugin: NotebookContext, parent: HTMLEle
   parent.createEl('p', { text: reason, cls: 'charity-hint' });
   if (plugin.referencePath && plugin.app.vault.getAbstractFileByPath(plugin.referencePath) instanceof TFile)
     button(parent, 'Reference: setup and capture', () => plugin.openFile(plugin.referencePath!));
-  else parent.createEl('p', { text: 'Reference notes are unavailable. Open the examples Home to review this installation.', cls: 'charity-hint' });
+  else parent.createEl('p', { text: 'Reference notes are unavailable. Open the examples workspace to review this installation.', cls: 'charity-hint' });
 }
 export function details(parent: HTMLElement, label: string): HTMLDetailsElement {
   const section = parent.createEl('details', { cls: 'charity-details' }); section.createEl('summary', { text: label }); return section;
@@ -79,7 +83,7 @@ export function manualDraft(kind: PlaceKind, coordinates: Coordinates | null = n
 export class ContactModal extends Modal {
   private finishEditing?: () => void;
   constructor(private plugin: NotebookContext, private place: PlaceRecord) { super(plugin.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     if (!(this.finishEditing = this.plugin.beginEditing())) { this.close(); return; }
     this.modalEl.addClass('charity-contact-modal'); this.titleEl.setText('Contact details'); renderContextBanner(this.plugin, this.contentEl);
     let website = typeof this.place.properties.website === 'string' ? this.place.properties.website : '';
@@ -105,7 +109,7 @@ export class ContactModal extends Modal {
 }
 export class TextModal extends Modal {
   constructor(private plugin: NotebookContext, private heading: string, private label: string, private save: (value: string) => Promise<unknown>, private initial = '') { super(plugin.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     this.titleEl.setText(this.heading); renderContextBanner(this.plugin, this.contentEl); let value = this.initial;
     new Setting(this.contentEl).setName(this.label).addText(t => t.setValue(value).onChange(v => value = v));
     button(this.contentEl, 'Save', async () => { await this.save(value); this.close(); }, true);
@@ -121,14 +125,14 @@ function renderMovePreview(el: HTMLElement, preview: { files: { from: string; to
 }
 export class LocalityModal extends Modal {
   constructor(private plugin: NotebookContext, private existing?: LocalityRecord, private created?: (locality: LocalityRecord) => unknown) { super(plugin.app); }
-  onOpen(): void { void this.render().catch(e => this.contentEl.createEl('p', { text: errorText(e), cls: 'charity-error' })); }
+  onOpen(): void { markInputModal(this); void this.render().catch(e => this.contentEl.createEl('p', { text: errorText(e), cls: 'charity-error' })); }
   private async render(): Promise<void> {
     const values = await this.plugin.store.listLocalities(), el = this.contentEl; renderContextBanner(this.plugin, el);
     this.titleEl.setText(this.existing ? 'Rename area / Change parent' : 'New locality');
     let name = this.existing?.name ?? '', parent = this.existing?.parentPath ?? '';
     let preview: Awaited<ReturnType<typeof this.plugin.store.previewLocalityMove>> | undefined;
     const previewEl = el.createDiv('charity-move-preview'), invalidate = () => { preview = undefined; previewEl.empty(); };
-    new Setting(el).setName('Area name').setDesc('For example, Riverside or Exampletown. Leave parent empty to create a town first.').addText(t => t.setValue(name).onChange(v => { name = v; invalidate(); }));
+    new Setting(el).setName('Area name').setDesc('Use a town or neighbourhood name. Leave parent empty to create a town first.').addText(t => t.setValue(name).onChange(v => { name = v; invalidate(); }));
     const row = new Setting(el).setName('Parent area').setDesc(values.find(l => l.path === parent)?.label || 'None — standalone town or area');
     row.addButton(b => b.setButtonText('Choose…').onClick(() => new PickModal(this.plugin, values.filter(l => l.path !== this.existing?.path && !l.path.startsWith((this.existing?.path.replace(/\.md$/, '') ?? '\u0000') + '/')),
       localityLabel, l => { parent = l.path; row.setDesc(localityLabel(l)); invalidate(); }, 'Search parent areas').open()));
@@ -149,7 +153,7 @@ export class LocalityModal extends Modal {
 }
 export class NotebookMoveModal extends Modal {
   constructor(private plugin: NotebookContext) { super(plugin.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     if (this.plugin.kind === 'examples') { this.titleEl.setText('Examples reference'); renderExamplesReference(this.plugin, this.contentEl, 'The examples notebook stays separate. Moving a real notebook is described in Reference.'); return; }
     this.titleEl.setText('Move notebook'); let target = this.plugin.settings.root;
     const el = this.contentEl;
@@ -181,7 +185,7 @@ export class CaptureModal extends Modal {
   private remember = false; private phrase = ''; private phraseEdited = false;
   private rememberSetting?: Setting; private phraseSetting?: Setting; private phraseInput?: HTMLInputElement; private rememberToggle?: import('obsidian').ToggleComponent;
   constructor(private plugin: NotebookContext, public draft: CaptureDraft, private shopPath?: string, private done?: () => void) { super(plugin.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     if (!(this.finishEditing = this.plugin.beginEditing())) { this.close(); return; }
     this.owner.load(); this.modalEl.addClass('charity-capture-modal');
     void this.render().catch(e => this.contentEl.createEl('p', { text: errorText(e), cls: 'charity-error' }));
@@ -405,11 +409,11 @@ export async function renderPlace(plugin: NotebookContext, owner: Component, el:
     const rating = new Setting(el).setName('Sourcing rating').setDesc(formatRating(place.properties.rating));
     rating.addDropdown(d => {
       for (let n = 0; n <= 5; n += .5) d.addOption(String(n), n ? String(n) : '0 · Not rated');
-      d.setValue(String(place.properties.rating ?? 0)).onChange(v => void save(async () => { await plugin.store.updateAssessment(place.path, { rating: Number(v) }); rating.setDesc(formatRating(Number(v))); }));
+      d.setValue(propertyText(place.properties.rating, '0')).onChange(v => void save(async () => { await plugin.store.updateAssessment(place.path, { rating: Number(v) }); rating.setDesc(formatRating(Number(v))); }));
     });
     new Setting(el).setName('Shortlist').setDesc('Keep for an upcoming outing. Visits do not clear it.').addToggle(t => t.setValue(place.properties.shortlist === true).onChange(v => void save(() => plugin.store.updateAssessment(place.path, { shortlist: v }))));
     new Setting(el).setName('Takeaway').addText(t => {
-      t.setValue(String(place.properties.comments ?? ''));
+      t.setValue(propertyText(place.properties.comments));
       t.inputEl.onchange = () => void save(() => plugin.store.updateAssessment(place.path, { comments: t.getValue() }));
     });
     if (parking.choices.length) {
@@ -422,7 +426,7 @@ export async function renderPlace(plugin: NotebookContext, owner: Component, el:
       for (const p of parking.choices) {
         const line = section.createDiv('charity-parking-list');
         button(line, p.name, () => plugin.openFile(p.path));
-        line.createSpan({ text: String(p.properties.parking_cost ?? 'cost unknown') + ' · ' + String(p.properties.parking_availability ?? 'availability unknown') });
+        line.createSpan({ text: propertyText(p.properties.parking_cost, 'cost unknown') + ' · ' + propertyText(p.properties.parking_availability, 'availability unknown') });
         button(line, 'Unlink', () => save(() => plugin.store.unlinkParking(p.path, place.path)));
       }
     }
@@ -466,7 +470,7 @@ export async function renderPlace(plugin: NotebookContext, owner: Component, el:
 
 export class SetupModal extends Modal {
   constructor(private plugin: NotebookContext) { super(plugin.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     if (this.plugin.kind === 'examples') { this.titleEl.setText('Examples reference'); renderExamplesReference(this.plugin, this.contentEl); return; }
     this.titleEl.setText('Set up Reseller sourcing'); const el = this.contentEl;
     el.createEl('p', { text: 'Vault: ' + this.plugin.app.vault.getName() + ' · Plugin ' + this.plugin.manifest.version });
@@ -509,12 +513,12 @@ export class SetupModal extends Modal {
 }
 export class CreditsModal extends Modal {
   constructor(private plugin: NotebookContext) { super(plugin.app); }
-  onOpen(): void {
-    this.titleEl.setText('Reseller sourcing — About / Credits'); renderContextBanner(this.plugin, this.contentEl);
-    this.contentEl.createEl('p', { text: 'Local test candidate ' + this.plugin.manifest.version + '. No paid API, telemetry or background capture service.' });
-    this.contentEl.createEl('p', { text: 'Map view adapted from Obsidian Maps 0.2.2, © 2025 Obsidian, MIT licence. Pinned commit 8703e98013fa20fb188746d24664452f41b17227. Modified for sourcing notes, linked parking, map placement, padding, lifecycle handling and MapLibre 6.' });
+  onOpen(): void { markInputModal(this);
+    this.titleEl.setText('Reseller sourcing — about / credits'); renderContextBanner(this.plugin, this.contentEl);
+    this.contentEl.createEl('p', { text: 'Version ' + this.plugin.manifest.version + '. No paid API, telemetry or background capture service.' });
+    this.contentEl.createEl('p', { text: 'Map view adapted from Obsidian Maps 0.2.2, © 2025 Obsidian, MIT licence. Pinned commit 8703e98013fa20fb188746d24664452f41b17227. Modified for sourcing notes, linked parking, map placement, padding, lifecycle handling and MapLibre GL JS 6.' });
     external(this.plugin, this.contentEl, 'Upstream Obsidian Maps source', 'https://github.com/obsidianmd/obsidian-maps/tree/8703e98013fa20fb188746d24664452f41b17227');
-    this.contentEl.createEl('p', { text: 'MapLibre GL JS: BSD-3-Clause. Mapbox RTL text: BSD-2-Clause and ICU notices. YAML: ISC. Complete licences, notices and modification details are included below, including when installed through Community Plugins.' });
+    this.contentEl.createEl('p', { text: 'MapLibre GL JS: BSD-3-Clause. YAML: ISC. Complete licences, notices and modification details are included below, including when installed through community plugins.' });
     const legal = details(this.contentEl, 'Full licences and third-party notices');
     button(legal, 'Copy full notices', () => copyTextOrShow(this.plugin.app, THIRD_PARTY_NOTICES, 'Third-party notices'));
     legal.createEl('pre', { text: THIRD_PARTY_NOTICES, cls: 'charity-license-text' });
@@ -526,7 +530,7 @@ export class CreditsModal extends Modal {
 
 export class ChangeAreaModal extends Modal {
   constructor(private plugin: NotebookContext, private path: string) { super(plugin.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     this.titleEl.setText('Change area'); this.modalEl.addClass('charity-change-area-modal');
     void this.render().catch(e => this.contentEl.createEl('p', { text: errorText(e), cls: 'charity-error' }));
   }
@@ -556,11 +560,11 @@ export class ChangeAreaModal extends Modal {
 }
 export class AreaHintsModal extends Modal {
   constructor(private plugin: NotebookContext) { super(plugin.app); }
-  onOpen(): void { this.titleEl.setText('Remembered address rules'); void this.render().catch(e => this.contentEl.createEl('p', { text: errorText(e), cls: 'charity-error' })); }
+  onOpen(): void { markInputModal(this); this.titleEl.setText('Remembered address rules'); void this.render().catch(e => this.contentEl.createEl('p', { text: errorText(e), cls: 'charity-error' })); }
   private async render(): Promise<void> {
     const areas = await this.plugin.store.listLocalities(); const el = this.contentEl; el.empty(); renderContextBanner(this.plugin, el);
     el.createEl('p', { text: 'These rules suggest an area when an address contains a saved phrase within its town. Conflicting rules require a choice; no notes are moved automatically.' });
-    if (!this.plugin.settings.areaHints.length) el.createEl('p', { text: 'No remembered rules yet. During capture, confirm an area and choose Remember this address phrase.', cls: 'charity-empty-state' });
+    if (!this.plugin.settings.areaHints.length) el.createEl('p', { text: 'No remembered rules yet. During capture, confirm an area and choose to remember its address phrase.', cls: 'charity-empty-state' });
     for (const hint of this.plugin.settings.areaHints) {
       const target = areas.find(area => area.path === (hint.localityPath || hint.townPath));
       const row = new Setting(el).setName(hint.phrase).setDesc(target?.label ?? 'Saved target is missing — edit or remove this rule.');
@@ -579,7 +583,7 @@ export class AreaHintsModal extends Modal {
 }
 class AreaHintEditModal extends Modal {
   constructor(private plugin: NotebookContext, private hint?: AreaHint, private done?: () => Promise<void>) { super(plugin.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     this.titleEl.setText(this.hint ? 'Edit address rule' : 'New address rule');
     void this.render().catch(e => this.contentEl.createEl('p', { text: errorText(e), cls: 'charity-error' }));
   }
@@ -646,7 +650,7 @@ export async function renderPracticeSettings(plugin: NotebookContext, el: HTMLEl
     button(recovery, 'Restore previous organisation', async () => {
       try {
         await plugin.runRootOperation(() => plugin.store.rollbackMove(), true);
-        status.setText('Previous practice organisation restored. Reopen Practice settings to continue.');
+        status.setText('Previous practice organisation restored. Reopen practice settings to continue.');
       } catch (error) { status.setText('Not restored: ' + errorText(error)); status.addClass('charity-error'); }
     }, true);
     renderExamplesReference(plugin, el); return;

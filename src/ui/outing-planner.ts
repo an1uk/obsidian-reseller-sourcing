@@ -1,3 +1,4 @@
+import { markInputModal } from './modal-layout';
 import { Component, Modal, Notice, Setting } from 'obsidian';
 import type { NotebookContext } from '../notebook-context';
 import type { Coordinates, PlaceRecord } from '../types';
@@ -26,7 +27,7 @@ export function parsePlanningHoursOverride(value: string): HoursOverride {
   const intervals = parts.map(part => {
     const found = pattern.exec(part);
     if (!found || found[1] === found[2]) throw Error('Use opening intervals such as 09:00-12:00; 13:00-17:00. Overnight closing times are allowed.');
-    return { open: found[1]!, close: found[2]! };
+    return { open: found[1], close: found[2] };
   });
   return { closed: false, intervals };
 }
@@ -55,7 +56,7 @@ export class OutingPlannerModal extends Modal {
   private distanceUnit: DistanceUnit = 'miles';
   constructor(private context: NotebookContext, private target: PlannerTarget) { super(context.app); }
 
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     if (!(this.finishEditing = this.context.beginEditing())) { this.close(); return; }
     this.owner.load();
     this.titleEl.setText('Plan journey');

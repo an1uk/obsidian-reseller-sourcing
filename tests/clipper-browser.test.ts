@@ -1,3 +1,4 @@
+import * as guards from '../src/domain/guards';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,7 +13,7 @@ const code = transformSync(source, { loader: 'ts', format: 'cjs', target: 'es202
 const expectedUrl = 'chrome-extension://cnjifjpddelmedmihgijeibhnjfabmlf/settings.html?section=templates';
 function browserModule(load?: (id: string) => unknown): BrowserModule {
   const module = { exports: {} };
-  vm.runInNewContext(code, { module, exports: module.exports, require: load });
+  vm.runInNewContext(code, { module, exports: module.exports, require: (id: string) => id.endsWith('domain/guards') ? guards : load?.(id) });
   return module.exports as BrowserModule;
 }
 const pathsOnly = (id: string) => {

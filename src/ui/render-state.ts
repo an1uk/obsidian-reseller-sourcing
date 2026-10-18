@@ -21,17 +21,18 @@ export function rememberRenderState(container: HTMLElement, path: string): () =>
   const pane = container.closest<HTMLElement>('.workspace-leaf') ?? container;
   let states = panes.get(pane); if (!states) { states = new Map(); panes.set(pane, states); }
   const scroll = container.closest<HTMLElement>('.markdown-preview-view,.cm-scroller');
-  const all = elements(container), active = container.ownerDocument.activeElement as HTMLElement | null;
+  const all = elements(container), active = container.ownerDocument.activeElement;
   let state = states.get(path);
   if (all.length) {
     state = { sections: new Map(), values: new Map(), scroll: scroll?.scrollTop ?? 0 };
-    container.querySelectorAll<HTMLDetailsElement>('details').forEach((section, index) => state!.sections.set(sectionKey(section, index), section.open));
-    for (const element of all) if (element instanceof HTMLInputElement && element.type === 'search') state.values.set(key(element, all), element.value);
-    if (active && container.contains(active)) {
+    const captured = state;
+    container.querySelectorAll<HTMLDetailsElement>('details').forEach((section, index) => captured.sections.set(sectionKey(section, index), section.open));
+    for (const element of all) if (element.instanceOf(HTMLInputElement) && element.type === 'search') state.values.set(key(element, all), element.value);
+    if (active?.instanceOf(HTMLElement) && container.contains(active)) {
       state.focus = key(active, all);
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) state.selection = [active.selectionStart, active.selectionEnd];
+      if (active.instanceOf(HTMLInputElement) || active.instanceOf(HTMLTextAreaElement)) state.selection = [active.selectionStart, active.selectionEnd];
     }
-    states.set(path, state); if (states.size > 24) states.delete(states.keys().next().value!);
+    states.set(path, state); const oldest = states.keys().next().value; if (states.size > 24 && oldest !== undefined) states.delete(oldest);
   }
   const saved = state;
   return () => {
@@ -40,13 +41,17 @@ export function rememberRenderState(container: HTMLElement, path: string): () =>
     const current = elements(container);
     for (const element of current) {
       const value = saved.values.get(key(element, current));
-      if (value !== undefined && element instanceof HTMLInputElement && element.type === 'search' && element.value !== value) { element.value = value; element.dispatchEvent(new Event('input', { bubbles: true })); }
+      if (value !== undefined && element.instanceOf(HTMLInputElement) && element.type === 'search' && element.value !== value) {
+        element.value = value;
+        const OwnerEvent = element.ownerDocument.defaultView?.Event ?? Event;
+        element.dispatchEvent(new OwnerEvent('input', { bubbles: true }));
+      }
     }
     const now = container.ownerDocument.activeElement;
     if (saved.focus && (!now || now === container.ownerDocument.body || now === active)) {
       const target = current.find(element => key(element, current) === saved.focus);
       target?.focus({ preventScroll: true });
-      if (target instanceof HTMLInputElement && saved.selection && ['text','search'].includes(target.type)) target.setSelectionRange(...saved.selection);
+      if (target?.instanceOf(HTMLInputElement) && saved.selection && ['text','search'].includes(target.type)) target.setSelectionRange(...saved.selection);
     }
     if (scroll) scroll.scrollTop = saved.scroll;
   };

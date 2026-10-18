@@ -1,5 +1,6 @@
 import { MarkdownView } from 'obsidian';
 import type { NotebookUiHost } from '../notebook-context';
+import { isRecord } from '../domain/guards';
 
 interface NativePropertiesEditor {
   containerEl: HTMLElement;
@@ -15,21 +16,23 @@ interface OpenPlaceState {
 }
 
 function element(value: unknown): value is HTMLElement {
-  return !!value && typeof value === 'object' &&
-    (value as HTMLElement).nodeType === 1 &&
-    typeof (value as HTMLElement).querySelector === 'function';
+  const isNode = (candidate: unknown): candidate is Node => isRecord(candidate) && typeof candidate.nodeType === 'number' && typeof candidate.instanceOf === 'function';
+  return isNode(value) && value.instanceOf(HTMLElement);
 }
 
 /** The native API is internal: leave Properties unchanged if Obsidian changes it. */
 function propertiesEditor(view: MarkdownView): NativePropertiesEditor | undefined {
-  const value = (view as unknown as { metadataEditor?: Partial<NativePropertiesEditor> }).metadataEditor;
-  if (!value || !element(value.containerEl) || typeof value.collapsed !== 'boolean' ||
-      typeof value.setCollapse !== 'function') return;
-  return value as NativePropertiesEditor;
+  const native: unknown = view;
+  if (!isRecord(native) || !isRecord(native.metadataEditor)) return;
+  const value = native.metadataEditor;
+  if (!element(value.containerEl) || typeof value.collapsed !== 'boolean' || typeof value.setCollapse !== 'function') return;
+  const setCollapse = value.setCollapse;
+  return { containerEl: value.containerEl, headingEl: element(value.headingEl) ? value.headingEl : undefined,
+    collapsed: value.collapsed, setCollapse: (collapsed, animateAndPersist) => { setCollapse.call(value, collapsed, animateAndPersist); } };
 }
 
 function isPlacePath(path: string, root: string): boolean {
-  return /\.md$/i.test(path) && (path === root + '/Home.md' || ['Sources', 'Shops', 'Parking', 'Visits'].some(folder => path.startsWith(root + '/' + folder + '/')));
+  return /\.md$/i.test(path) && (path === root + '/Home.md' || ['Places', 'Sources', 'Shops', 'Parking', 'Visits'].some(folder => path.startsWith(root + '/' + folder + '/')));
 }
 
 /**

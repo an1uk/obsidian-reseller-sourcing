@@ -30,14 +30,16 @@ export function validRefreshListing(value: unknown): string {
 /** Only strict portable receipts can authorize recovery; callers must also verify raw capture bytes and identity provenance. */
 export function captureRefreshReceipts(properties: Record<string, unknown>): CaptureRefreshReceipt[] {
   if (!sourceTags(properties) || !Array.isArray(properties.source_refresh_receipts)) return [];
+  const sourceCaptureId = properties.source_capture_id ?? '';
+  if (typeof sourceCaptureId !== 'string') return [];
   return properties.source_refresh_receipts.filter((raw): raw is CaptureRefreshReceipt => {
     if (!object(raw) || typeof raw.captureId !== 'string' || !/^[a-f0-9]{64}$/.test(raw.captureId) ||
       typeof raw.captureRevision !== 'string' || !/^[a-f0-9]{64}$/.test(raw.captureRevision) ||
       typeof raw.appliedAt !== 'string' || !Number.isFinite(Date.parse(raw.appliedAt)) || new Date(raw.appliedAt).toISOString() !== raw.appliedAt ||
-      !Array.isArray(raw.fields) || raw.fields.some(key => !CAPTURE_REFRESH_FIELDS.includes(key as CaptureRefreshField)) ||
+      !Array.isArray(raw.fields) || raw.fields.some((key: unknown) => !CAPTURE_REFRESH_FIELDS.some(field => field === key)) ||
       new Set(raw.fields).size !== raw.fields.length || typeof raw.captureUrl !== 'string' || !validRefreshListing(raw.captureUrl) ||
       raw.captureIdentity !== canonicalPlaceIdentity(raw.captureUrl) || typeof raw.targetSourceCaptureId !== 'string' ||
-      raw.targetSourceCaptureId !== String(properties.source_capture_id || '')) return false;
+      raw.targetSourceCaptureId !== sourceCaptureId) return false;
     return true;
   });
 }

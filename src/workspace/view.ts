@@ -1,7 +1,8 @@
+import { propertyText } from '../domain/guards';
 import { Component, ItemView, MarkdownRenderer, Menu, Notice, Platform, Setting, TFile, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
 import type { NotebookContext, NotebookUiHost } from '../notebook-context';
 import type { PlaceRecord } from '../types';
-import type { PreparationDraft, WorkspaceRoute, WorkspaceViewState } from './types';
+import type { OutingPreparation, PreparationDraft, WorkspaceRoute, WorkspaceViewState } from './types';
 import { OutingPreparationModal } from './outing-preparation';
 import { PlacePreparationModal } from './place-preparation';
 import { button, ContactModal, ChangeAreaModal, CreditsModal, details, errorText, external, LocalityModal, manualDraft, PickModal, SetupModal, VisitModal } from '../ui';
@@ -14,10 +15,14 @@ import { VisitInsightsModal } from '../ui/visit-insights';
 import { formatRating, googleMapsUrl, navigationUrl, resolveParking, telephoneUrl, websiteUrl } from '../domain';
 import { mountPlaceMap, type PlaceMap } from '../map';
 import { readNote } from '../storage/markdown';
-import { routeForPath, checkedRoute } from './routes';
+import { routeForPath } from './routes';
+import { workspaceContext } from './context';
+import { isUnknownArray } from '../domain/guards';
+import { checkedViewState } from './view-state';
 export { routeForPath } from './routes';
 
 export const WORKSPACE_VIEW = 'reseller-sourcing-workspace';
+const elementTarget = (value: EventTarget | null): value is Element => !!value && 'nodeType' in value && value.nodeType === 1;
 export async function openSourcingWorkspace(host: NotebookUiHost, context: NotebookContext, route: WorkspaceRoute = { screen: 'home' }): Promise<void> {
   const leaves = host.app.workspace.getLeavesOfType(WORKSPACE_VIEW);
   const active = host.app.workspace.getActiveViewOfType(SourcingWorkspace);
@@ -43,51 +48,44 @@ export class SourcingWorkspace extends ItemView {
   getIcon() { return 'store'; }
   getState(): Record<string, unknown> { this.remember(); return structuredClone(this.state) as unknown as Record<string, unknown>; }
   async setState(raw: unknown, result: ViewStateResult) {
-    const value = raw as Partial<WorkspaceViewState>;
-    if (value && typeof value.root === 'string') {
-      const route = value.route;
-      this.body = undefined;
-      const p = value.places;
-      this.state = { root: value.root, route: checkedRoute(value.root,route), places: p && typeof p.query === 'string' && typeof p.area === 'string' && ['shop','parking',''].includes(p.kind) && ['map','list'].includes(p.view) ? p : undefined, history: value.history, positions: value.positions && typeof value.positions === 'object' ? value.positions : {} };
-    }
+    const state = checkedViewState(raw);
+    if (state) { this.body = undefined; this.state = state; }
     await this.bindContext(); await this.render(); await super.setState(raw, result);
   }
   private async bindContext() {
     const original = await this.host.contextForPath(this.root + '/Home.md');
     if (!original) throw Error('This notebook is unavailable. Open its Home after setup or attachment.');
     const open = async (path: string) => { const route = routeForPath(this.root, path); if (route) await this.navigate(route); else await this.openNote(path); };
-    this.context = new Proxy(original, { get: (target, key) => {
-      if (key === 'openFile') return open;
-      if (key === 'home') return () => this.navigate({ screen: 'home' });
-      if (key === 'newOuting') return () => new OutingPreparationModal(this.context!).open();
-      if (key === 'newPlace') return (kind: 'shop' | 'parking', coordinates = null, source?: string) => new PlacePreparationModal(this.context!, manualDraft(kind, coordinates), source).open();
-      if (key === 'mapHost') return { ...target.mapHost, openFile: open };
-      const value = Reflect.get(target, key, target); return typeof value === 'function' ? value.bind(target) : value;
-    } });
+    this.context = workspaceContext(original, {
+      openFile: open,
+      home: () => this.navigate({ screen: 'home' }),
+      newOuting: () => { if (this.context) new OutingPreparationModal(this.context).open(); },
+      newPlace: (kind, coordinates = null, source) => { if (this.context) new PlacePreparationModal(this.context, manualDraft(kind, coordinates), source).open(); },
+    });
   }
   async onOpen() {
     this.owner.load();
     if (Platform.isMobileApp) {
       const measure = () => this.mobileInsets();
-      this.registerDomEvent(window, 'resize', measure);
-      window.visualViewport?.addEventListener('resize', measure);
+      this.registerDomEvent(this.contentEl.win, 'resize', measure);
+      this.contentEl.win.visualViewport?.addEventListener('resize', measure);
       const bar = this.containerEl.ownerDocument.querySelector('.mobile-navbar');
       const resize = new ResizeObserver(measure), changes = new MutationObserver(measure);
       resize.observe(this.contentEl);
       if (bar) { resize.observe(bar); changes.observe(bar, { attributes: true, attributeFilter: ['class', 'style'] }); }
-      this.register(() => { resize.disconnect(); changes.disconnect(); window.visualViewport?.removeEventListener('resize', measure); });
+      this.register(() => { resize.disconnect(); changes.disconnect(); this.contentEl.win.visualViewport?.removeEventListener('resize', measure); });
     }
     this.registerDomEvent(this.contentEl, 'click', event => {
-      const link = (event.target as HTMLElement)?.closest<HTMLAnchorElement>('a.internal-link');
+      const link = elementTarget(event.target) ? event.target.closest<HTMLAnchorElement>('a.internal-link') : null;
       const target = link?.getAttribute('data-href');
       if (!target) return;
-      const file = this.app.metadataCache.getFirstLinkpathDest(target.split('#')[0]!, this.root + '/Home.md');
+      const file = this.app.metadataCache.getFirstLinkpathDest(target.split('#')[0], this.root + '/Home.md');
       const route = file && routeForPath(this.root, file.path);
       if (route) { event.preventDefault(); event.stopPropagation(); void this.navigate(route); }
     }, { capture: true });
     const update = (file: { path: string }) => {
       if (!file.path.startsWith(this.root + '/') || file.path.startsWith(this.root + '/Examples/')) return;
-      window.clearTimeout(this.timer); this.timer = window.setTimeout(() => {
+      this.contentEl.win.clearTimeout(this.timer); this.timer = this.contentEl.win.setTimeout(() => {
         if (this.closed) return;
         if (this.body?.contains(this.containerEl.ownerDocument.activeElement) && this.containerEl.ownerDocument.activeElement?.matches('input,textarea,select')) { this.pendingRefresh = true; return; }
         this.pendingRefresh = false;
@@ -109,7 +107,7 @@ export class SourcingWorkspace extends ItemView {
       update(file);
     }));
   }
-  async onClose() { this.closed = true; ++this.generation; window.clearTimeout(this.timer); this.owner.unload(); }
+  async onClose() { this.closed = true; ++this.generation; this.contentEl.win.clearTimeout(this.timer); this.owner.unload(); }
   private mobileInsets() {
     if (!Platform.isMobileApp || !this.shell || this.closed) return;
     const rect = this.contentEl.getBoundingClientRect(), bar = this.containerEl.ownerDocument.querySelector<HTMLElement>('.mobile-navbar');
@@ -129,7 +127,7 @@ export class SourcingWorkspace extends ItemView {
     await this.render(false); this.app.workspace.requestSaveLayout();
   }
   private async openNote(path: string) {
-    const file = path.split('#')[0]!;
+    const file = path.split('#')[0];
     if (!file.startsWith(this.root + '/') || file.startsWith(this.root + '/Examples/') || !this.context?.store.scoped(file)) throw Error('Choose a note in this notebook.');
     if (!(this.app.vault.getAbstractFileByPath(file) instanceof TFile)) throw Error('This note no longer exists.');
     await this.app.workspace.openLinkText(path, this.root + '/Home.md', true);
@@ -149,7 +147,7 @@ export class SourcingWorkspace extends ItemView {
     if (!this.context || this.context.root !== this.root) await this.bindContext(); if (token !== this.generation) return;
     const c = this.context!;
     // Keep the displayed screen until its replacement is ready, avoiding blank flashes during vault updates.
-    this.shell = this.contentEl.ownerDocument.createElement('div'); this.shell.addClass('charity-workspace'); this.shell.toggleClass('is-mobile', Platform.isMobileApp);
+    const shell = this.contentEl.createDiv({ cls: 'charity-workspace' }); shell.detach(); this.shell = shell; shell.toggleClass('is-mobile', Platform.isMobileApp);
     this.nav = this.shell.createEl('nav', { cls: 'charity-workspace-nav', attr: { 'aria-label': 'Sourcing navigation' } });
     const current = ['place', 'area'].includes(this.state.route.screen) ? 'places' : this.state.route.screen === 'outing' ? 'outings' : this.state.route.screen === 'visit' ? 'history' : this.state.route.screen;
     for (const [screen, label] of [['home', 'Home'], ['places', 'Places'], ['outings', 'Outings'], ['history', 'History']] as const) {
@@ -192,20 +190,20 @@ export class SourcingWorkspace extends ItemView {
     const c = this.context!, [overview, prep] = await Promise.all([inspectHome(c), c.store.preparations.inspect()]);
     if (this.closed || this.body !== el) return;
     this.moreCount = overview.captures;
-    const active = overview.outings.find(o => o.status === 'active' && !(c.kind === 'examples' && (o as unknown as { exampleBackground?: boolean }).exampleBackground));
-    const planning = prep.drafts.find(d => d.kind === 'outing' && !d.deferred && d.phase === 'editing');
+    const active = overview.outings.find(o => o.status === 'active' && !(c.kind === 'examples' && o.exampleBackground));
+    const planning = prep.drafts.find((d): d is PreparationDraft<OutingPreparation> => d.kind === 'outing' && !d.deferred && d.phase === 'editing');
     el.createEl('h1', { text: active ? 'Continue your outing' : planning ? 'Your plan is saved' : !overview.sources.length ? 'Start with one place' : 'Where would you like to go?' });
     const lead = el.createDiv('charity-workspace-lead');
     if (!overview.sources.length) { lead.createEl('p', { text: 'Add a place you know. A name is enough to start.' }); button(lead, 'Add your first place', () => c.newPlace('shop'), true); }
     else if (active) { lead.createEl('p', { text: active.name }); button(lead, 'Continue outing', () => this.navigate({ screen: 'outing', path: active.path }), true); }
     else if (planning) {
-      lead.createEl('p', { text: (planning.data as import('./types').OutingPreparation).name || 'Continue choosing places and reviewing the journey.' });
+      lead.createEl('p', { text: planning.data.name || 'Continue choosing places and reviewing the journey.' });
       button(lead, 'Continue planning', () => this.openPreparation(planning), true);
       button(lead, 'Not now', async () => { await c.store.preparations.defer(planning.id, planning.revision); await this.render(); });
     } else { lead.createEl('p', { text: 'Start with an area or your shortlist.' }); button(lead, 'Choose where to go', () => c.newOuting(), true); }
     const quick = el.createDiv('charity-actions'); button(quick, 'Record a visit', () => chooseVisitSource(c)); button(quick, 'Find a place', () => this.navigate({ screen: 'places' }));
     const saved = details(el, 'Saved for later');
-    for (const d of prep.drafts) { const row = saved.createDiv('charity-compact-row'); row.createSpan({ text: d.kind === 'outing' ? (d.data as import('./types').OutingPreparation).name || 'Outing preparation' : (d.data as import('./types').PlacePreparation).capture.name || 'Place preparation' }); button(row, d.phase === 'completing' ? 'Review saved completion' : 'Resume', () => this.openPreparation(d)); }
+    for (const d of prep.drafts) { const row = saved.createDiv('charity-compact-row'); row.createSpan({ text: d.kind === 'outing' ? (d.data).name || 'Outing preparation' : (d.data).capture.name || 'Place preparation' }); button(row, d.phase === 'completing' ? 'Review saved completion' : 'Resume', () => this.openPreparation(d)); }
     for (const item of [overview.primary, ...overview.others].filter((v): v is NonNullable<typeof v> => !!v && v.outingPath !== active?.path)) {
       const row = saved.createDiv('charity-compact-row'); row.createSpan({ text: item.sourceName || item.label }); button(row, item.kind.endsWith('operation') ? 'Review save' : 'Resume', () => resume(c, item));
     }
@@ -241,7 +239,7 @@ export class SourcingWorkspace extends ItemView {
         const row = list.createEl('article', { cls: 'charity-source-choice' }), text = row.createDiv();
         button(text, p.name, () => this.navigate({ screen: 'place', path: p.path })).addClass('charity-place-name');
         text.createEl('p', { text: [areas.find(a => a.path === p.locality)?.label ?? 'Unassigned', p.kind === 'shop' ? formatRating(p.properties.rating) : 'Parking', p.properties.shop_closed ? 'Permanently closed' : ''].filter(Boolean).join(' · '), cls: 'charity-hint' });
-        if (p.properties.comments) text.createEl('p', { text: String(p.properties.comments) });
+        if (p.properties.comments) text.createEl('p', { text: propertyText(p.properties.comments) });
       }
       if (!filtered.length) list.createEl('p', { text: 'No matching places. Change the search or filters.' });
     };
@@ -252,7 +250,7 @@ export class SourcingWorkspace extends ItemView {
     if (this.closed || this.body !== el) return;
     if (!p) throw Error('This place no longer exists. Choose another from Places.');
     el.createEl('h1', { text: p.name }); el.createEl('p', { text: areas.find(a => a.path === p.locality)?.label ?? 'Unassigned', cls: 'charity-hint' });
-    if (p.kind === 'shop') el.createEl('p', { text: formatRating(p.properties.rating) + (p.properties.comments ? ' · ' + p.properties.comments : '') });
+    if (p.kind === 'shop') el.createEl('p', { text: formatRating(p.properties.rating) + (p.properties.comments ? ' · ' + propertyText(p.properties.comments) : '') });
     const actions = el.createDiv('charity-actions'); if (p.kind === 'shop') button(actions, 'Record visit', () => new VisitModal(c, path).open(), true);
     const parking = p.kind === 'shop' ? resolveParking(p, places) : { status: 'single', destination: p, choices: [] as PlaceRecord[] };
     const directions = button(actions, 'Directions', () => {
@@ -265,7 +263,7 @@ export class SourcingWorkspace extends ItemView {
     });
     if (p.kind === 'shop') new Setting(el).setName('Shortlist').addToggle(t => t.setValue(p.properties.shortlist === true).onChange(v => void c.store.updateAssessment(path, { shortlist: v }).catch(e => new Notice(errorText(e)))));
     const tabs = el.createDiv('charity-actions');
-    for (const key of ['overview', 'map', 'visits', 'details'] as const) { if (key === 'visits' && p.kind === 'parking') continue; const b = button(tabs, key[0]!.toUpperCase() + key.slice(1), () => this.navigate({ screen: 'place', path, section: key })); b.setAttribute('aria-pressed', String(key === section)); }
+    for (const key of ['overview', 'map', 'visits', 'details'] as const) { if (key === 'visits' && p.kind === 'parking') continue; const b = button(tabs, key[0].toUpperCase() + key.slice(1), () => this.navigate({ screen: 'place', path, section: key })); b.setAttribute('aria-pressed', String(key === section)); }
     if (section === 'map') { this.map = mountPlaceMap(this.owner, el, c.mapHost, { records: places, focusPath: p.path }); return; }
     if (section === 'visits') { button(el, 'Visit insights', () => new VisitInsightsModal(c, path).open()); await renderVisitHistory(c, this.owner, el, path); const list = el.querySelector('details'); if (list) list.open = true; return; }
     if (section === 'overview') {
@@ -273,10 +271,10 @@ export class SourcingWorkspace extends ItemView {
         const visits = await c.store.visits.list(path), reminder = visits.find(v => v.nextTime.trim());
         if (this.closed || this.body !== el) return;
         if (reminder) { el.createEl('h2', { text: 'Remember next time' }); el.createEl('p', { text: reminder.nextTime }); }
-        el.createEl('p', { text: 'Last visit: ' + (p.properties.last_visited || 'No date recorded'), cls: 'charity-hint' });
+        el.createEl('p', { text: 'Last visit: ' + propertyText(p.properties.last_visited, 'No date recorded'), cls: 'charity-hint' });
         const assessment = details(el, 'Update assessment');
-        new Setting(assessment).setName('Sourcing rating').addDropdown(d => { for (let n = 0; n <= 5; n += .5) d.addOption(String(n), n ? String(n) : 'Not rated'); d.setValue(String(p.properties.rating ?? 0)).onChange(v => void c.store.updateAssessment(path, { rating: Number(v) }).catch(e => new Notice(errorText(e)))); });
-        new Setting(assessment).setName('Takeaway').addText(t => { t.setValue(String(p.properties.comments ?? '')); t.inputEl.onchange = () => void c.store.updateAssessment(path, { comments: t.getValue() }).catch(e => new Notice(errorText(e))); });
+        new Setting(assessment).setName('Sourcing rating').addDropdown(d => { for (let n = 0; n <= 5; n += .5) d.addOption(String(n), n ? String(n) : 'Not rated'); d.setValue(propertyText(p.properties.rating, '0')).onChange(v => void c.store.updateAssessment(path, { rating: Number(v) }).catch(e => new Notice(errorText(e)))); });
+        new Setting(assessment).setName('Takeaway').addText(t => { t.setValue(propertyText(p.properties.comments)); t.inputEl.onchange = () => void c.store.updateAssessment(path, { comments: t.getValue() }).catch(e => new Notice(errorText(e))); });
       }
       el.createEl('p', { text: parking.status === 'choice' ? 'Driving: choose from linked parking.' : 'Driving destination: ' + (parking.destination?.name ?? 'needs a parking choice or location'), cls: 'charity-hint' });
       const file = this.app.vault.getAbstractFileByPath(path); if (file instanceof TFile) {
@@ -286,14 +284,14 @@ export class SourcingWorkspace extends ItemView {
       }
       return;
     }
-    external(c, el, 'Website', websiteUrl(p.properties.website)); external(c, el, 'Call', telephoneUrl(String(p.properties.telephone ?? '')));
+    external(c, el, 'Website', websiteUrl(p.properties.website)); external(c, el, 'Call', telephoneUrl(propertyText(p.properties.telephone)));
     button(el, 'Edit contacts', () => new ContactModal(c, p).open()); button(el, 'Change area', () => new ChangeAreaModal(c, path).open());
-    const editText = (parent: HTMLElement, label: string, key: string) => new Setting(parent).setName(label).addText(t => { t.setValue(String(p.properties[key] ?? '')); t.inputEl.onchange = () => void c.store.updatePlaceDetails(path, { [key]: t.getValue() }).catch(e => new Notice(errorText(e))); });
+    const editText = (parent: HTMLElement, label: string, key: string) => new Setting(parent).setName(label).addText(t => { t.setValue(propertyText(p.properties[key])); t.inputEl.onchange = () => void c.store.updatePlaceDetails(path, { [key]: t.getValue() }).catch(e => new Notice(errorText(e))); });
     editText(el, 'Address', 'address');
     if (p.kind === 'shop') {
       new Setting(el).setName('Permanently closed').addToggle(t => t.setValue(p.properties.shop_closed === true).onChange(v => void c.store.updatePlaceDetails(path, { shop_closed: v }).catch(e => new Notice(errorText(e)))));
       const links = details(el, 'Parking');
-      new Setting(links).setName('Parking on site').addDropdown(d => { for (const [value,label] of [['unknown','Unknown'],['yes','Available on site'],['no','None on site']]) d.addOption(value!,label!); d.setValue(String(p.properties.parking_on_site ?? 'unknown')).onChange(v => void c.store.updatePlaceDetails(path, { parking_on_site: v }).catch(e => new Notice(errorText(e)))); });
+      new Setting(links).setName('Parking on site').addDropdown(d => { for (const [value,label] of [['unknown','Unknown'],['yes','Available on site'],['no','None on site']]) d.addOption(value,label); d.setValue(propertyText(p.properties.parking_on_site, 'unknown')).onChange(v => void c.store.updatePlaceDetails(path, { parking_on_site: v }).catch(e => new Notice(errorText(e)))); });
       editText(links, 'On-site cost (free / paid / details)', 'on_site_parking_cost'); editText(links, 'Typical availability', 'on_site_parking_availability');
       button(links, 'Link parking', () => new PickModal(c, places.filter(v => v.kind === 'parking'), v => v.name, v => c.store.linkParking(v.path, path), 'Choose shared parking').open());
       button(links, 'Add parking', () => c.newPlace('parking', p.coordinates, path));
@@ -310,10 +308,10 @@ export class SourcingWorkspace extends ItemView {
       for (const source of places.filter(v => v.kind === 'shop' && resolveParking(v,places).choices.some(q => q.path === path))) { const row = links.createDiv('charity-compact-row'); button(row, source.name, () => c.openFile(source.path)); button(row, 'Unlink', () => c.store.unlinkParking(path, source.path)); }
     }
     const captured = details(el, 'Captured Google details');
-    captured.createEl('p', { text: 'Google ' + (p.properties.google_rating ?? 'unknown') + ' / 5 · ' + (p.properties.google_review_count ?? 'unknown') + ' reviews · checked ' + (p.properties.google_checked ?? 'unknown') });
+    captured.createEl('p', { text: 'Google ' + propertyText(p.properties.google_rating, 'unknown') + ' / 5 · ' + propertyText(p.properties.google_review_count, 'unknown') + ' reviews · checked ' + propertyText(p.properties.google_checked, 'unknown') });
     for (const [label, key, checked] of [['Opening hours', 'google_hours', 'google_hours_checked'], ['Review topics', 'google_review_topics', 'google_review_topics_checked']]) {
-      captured.createEl('h3', { text: label! }); captured.createEl('p', { text: 'Checked ' + (p.properties[checked!] ?? 'unknown'), cls: 'charity-hint' });
-      const list = captured.createEl('ul'); for (const value of Array.isArray(p.properties[key!]) ? p.properties[key!] as unknown[] : []) list.createEl('li', { text: String(value) });
+      captured.createEl('h3', { text: label }); captured.createEl('p', { text: 'Checked ' + propertyText(p.properties[checked], 'unknown'), cls: 'charity-hint' });
+      const list = captured.createEl('ul'); for (const value of isUnknownArray(p.properties[key]) ? p.properties[key] : []) list.createEl('li', { text: propertyText(value) });
     }
   }
   private async renderArea(el: HTMLElement, path: string) {

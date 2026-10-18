@@ -8,6 +8,8 @@ import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const packageModule = pathToFileURL(path.join(project, 'scripts/package.mjs')).href;
@@ -15,6 +17,7 @@ const legalModule = pathToFileURL(path.join(project, 'scripts/legal-notices.mjs'
 const { packagePlugin } = await import(packageModule);
 const { collectLegalNotices } = await import(legalModule);
 const sha256 = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
+const execute = promisify(execFile);
 
 async function fixture(t: any): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'reseller-universal-package-'));
@@ -66,7 +69,8 @@ function zipEntries(bytes: Buffer): Map<string, Buffer> {
 
 test('combined credits embed complete installed notices without runtime files or Node imports', async () => {
   const notices = await collectLegalNotices(project);
-  assert.equal(notices.dependencies.length, 27);
+  assert.equal(notices.dependencies.length, 26);
+  assert.ok(!notices.dependencies.some((dependency: { name: string }) => dependency.name === '@mapbox/mapbox-gl-rtl-text'));
   for (const [name, data] of notices.files) {
     assert.ok(notices.text.includes(name), name);
     assert.ok(notices.text.includes(data.toString('utf8')), name);
@@ -133,10 +137,24 @@ test('packaging fails when a bundled dependency has no redistribution notice', a
   await assert.rejects(() => fs.stat(path.join(root, 'dist')), { code: 'ENOENT' });
 });
 
+test('release preparation requires the exact tag and hashes before handing off five assets', async t => {
+  const root = await fixture(t);
+  const result = await packagePlugin(root);
+  const script = path.join(project, 'scripts/prepare-release.mjs');
+  const prepare = (version = '0.5.0') => execute(process.execPath, [script], { cwd: root, env: { ...process.env, EXPECTED_VERSION: version } });
+  await assert.rejects(() => prepare('0.5.1'), /exact version tag/);
+  await assert.rejects(() => fs.stat(path.join(root, 'dist/publish')), { code: 'ENOENT' });
+  await prepare();
+  assert.deepEqual((await fs.readdir(path.join(root, 'dist/publish'))).sort(), ['charity-sourcing-0.5.0.zip', 'main.js', 'manifest.json', 'release-checksums.json', 'styles.css']);
+  for (const name of ['main.js', 'manifest.json', 'styles.css']) assert.deepEqual(await fs.readFile(path.join(root, 'dist/publish', name)), await fs.readFile(path.join(result.release, name)));
+  await fs.writeFile(path.join(result.release, 'main.js'), 'changed after packaging');
+  await assert.rejects(() => prepare(), /checksum mismatch: main.js/);
+});
+
 test('release metadata is shared across platforms while Clipper release stays independently versioned', async () => {
   const readJson = async (name: string) => JSON.parse(await fs.readFile(path.join(project, name), 'utf8'));
   const [pkg, lock, manifest, versions] = await Promise.all(['package.json', 'package-lock.json', 'manifest.json', 'versions.json'].map(readJson));
-  assert.equal(pkg.version, '0.11.0');
+  assert.equal(pkg.version, '0.11.1');
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[''].version, pkg.version);
   assert.equal(manifest.version, pkg.version);

@@ -20,7 +20,7 @@ function host() {
   const source = fs.readFileSync(new URL('../src/ui/capture-refresh.ts', import.meta.url), 'utf8');
   vm.runInNewContext(transformSync(source, { loader: 'ts', format: 'cjs', target: 'es2022' }).code, {
     module, exports: module.exports,
-    require(id: string) {
+    require(id: string) { if (id.endsWith('modal-layout')) return { markInputModal() {} };
       if (id === 'obsidian') return { Modal };
       if (id === '../ui') return { errorText: (error: unknown) => error instanceof Error ? error.message : String(error) };
       throw Error('Unexpected import ' + id);

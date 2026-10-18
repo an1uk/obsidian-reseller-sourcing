@@ -1,4 +1,5 @@
-import { validateVisitInput } from '../visits/store';
+import { propertyText } from '../domain/guards';
+import { validateVisitInput, visitInputShape } from '../visits/store';
 import type { VisitStore } from '../visits/store';
 import type { App, TFile } from 'obsidian';
 import type { PlaceRecord } from '../types';
@@ -9,6 +10,8 @@ import type { OutingGroup, OutingPlanInput, OutingRecord, OutingStop, OutingStop
 
 import { buildOutingOptimisationPreview, resolvePlanningAnchor, validatePlanningOptions } from './planning';
 import { extractSourceContext } from './domain';
+import { hasControlCharacters, isUnknownArray } from '../domain/guards';
+import { notebookFiles } from '../storage/files';
 
 interface OutingHost {
   visits: VisitStore;
@@ -24,12 +27,28 @@ const text = (v: unknown): string => typeof v === 'string' ? v : '';
 const fileLike = (v: unknown): v is TFile => object(v) && 'extension' in v;
 const timestamp = () => new Date().toISOString();
 const allStops = (outing: OutingRecord) => outing.groups.flatMap(group => group.stops);
+function outingShape(value: unknown): value is Omit<OutingRecord, 'path' | 'revision'> {
+  if (!object(value) || !text(value.id) || !text(value.name) || typeof value.createdAt !== 'string' || value.status !== 'planned' && value.status !== 'active' && value.status !== 'finished' || !isUnknownArray(value.groups)) return false;
+  for (const group of value.groups) {
+    if (!object(group) || typeof group.id !== 'string' || typeof group.parkingPath !== 'string' || !isUnknownArray(group.stops)) return false;
+    for (const stop of group.stops) if (!object(stop) || typeof stop.id !== 'string' || typeof stop.sourcePath !== 'string' || stop.status !== 'pending' && stop.status !== 'visited' && stop.status !== 'skipped' || !['completedAt', 'visitOperationId', 'visitPath', 'visitId', 'skipReason'].every(key => stop[key] === undefined || typeof stop[key] === 'string')) return false;
+  }
+  if (value.draft !== undefined) {
+    const draft = value.draft;
+    if (!object(draft) || typeof draft.operationId !== 'string' || typeof draft.stopId !== 'string' || !visitInputShape(draft.input) || typeof draft.updatedAt !== 'string' || draft.visitRevision !== undefined && typeof draft.visitRevision !== 'string') return false;
+  }
+  if (value.operation !== undefined) {
+    const op = value.operation;
+    if (!object(op) || !visitInputShape(op.input) || !['id', 'stopId', 'sourcePath', 'recordedAt', 'sourceBeforeHash', 'sourceIdentity'].every(key => typeof op[key] === 'string') || !['visitPath', 'visitId', 'visitRevision'].every(key => op[key] === undefined || typeof op[key] === 'string') || op.kind !== undefined && op.kind !== 'linked-visit' || op.confirmedSkipped !== undefined && typeof op.confirmedSkipped !== 'boolean') return false;
+  }
+  return ['preparationId', 'startedAt', 'finishedAt'].every(key => value[key] === undefined || typeof value[key] === 'string') && (value.exampleBackground === undefined || typeof value.exampleBackground === 'boolean');
+}
 
 /** Durable outing state lives in ordinary linked Markdown, sharing the notebook's mutation queue. */
 export class OutingStore {
   constructor(private host: OutingHost) {}
   private file(path: string): TFile {
-    if (!path.startsWith(this.host.root() + '/Outings/') || /[\\\x00-\x1f]/.test(path) || path.split('/').some(p => p === '..' || p.startsWith('.'))) throw new Error('Choose an outing in this notebook.');
+    if (!path.startsWith(this.host.root() + '/Outings/') || path.includes('\\') || hasControlCharacters(path, false) || path.split('/').some(p => p === '..' || p.startsWith('.'))) throw new Error('Choose an outing in this notebook.');
     const file = this.host.app.vault.getAbstractFileByPath(path);
     if (!fileLike(file) || file.extension !== 'md') throw new Error('This outing note no longer exists.');
     return file;
@@ -40,8 +59,8 @@ export class OutingStore {
     if (!this.host.examples && properties.sourcing_example === true) throw new Error('Fictional outings belong in Examples.');
     if (!Array.isArray(properties.tags) || !properties.tags.includes('sourcing-outing') || !object(data) || data.schema !== 1 ||
         !text(data.id) || !text(data.name) || !['planned', 'active', 'finished'].includes(text(data.status)) || !Array.isArray(data.groups)) throw new Error('This outing has invalid properties. Review its note before continuing.');
-    const record = structuredClone(data) as unknown as OutingRecord;
-    record.path = path; record.revision = await hashText(raw);
+    if (!outingShape(data)) throw Error('This outing has invalid saved fields. Preserve its note for review.');
+    const record: OutingRecord = { ...structuredClone(data), path, revision: await hashText(raw) };
     const ids = new Set<string>(), sources = new Set<string>();
     for (const group of record.groups) {
       if (!object(group) || !text(group.id) || ids.has(group.id) || typeof group.parkingPath !== 'string' || !Array.isArray(group.stops)) throw new Error('This outing has invalid groups.');
@@ -69,7 +88,7 @@ export class OutingStore {
   async get(path: string): Promise<OutingRecord> { return (await this.load(path)).record; }
   async list(): Promise<OutingRecord[]> {
     const records: OutingRecord[] = [];
-    for (const file of this.host.app.vault.getMarkdownFiles().filter(f => f.path.startsWith(this.host.root() + '/Outings/'))) {
+    for (const file of notebookFiles(this.host.app.vault, this.host.root() + '/Outings').filter(f => f.extension === 'md')) {
       const raw = await this.host.app.vault.read(file), properties = readNote(raw).properties;
       if ((this.host.examples || properties.sourcing_example !== true) && Array.isArray(properties.tags) && properties.tags.includes('sourcing-outing')) records.push((await this.load(file.path)).record);
     }
@@ -257,7 +276,7 @@ export class OutingStore {
         return ids.map(id => items.find(item => item.id === id)!);
       };
       record.groups = ordered(record.groups, groupIds);
-      for (const group of record.groups) if (stopIdsByGroup[group.id]) group.stops = ordered(group.stops, stopIdsByGroup[group.id]!);
+      for (const group of record.groups) if (stopIdsByGroup[group.id]) group.stops = ordered(group.stops, stopIdsByGroup[group.id]);
       return this.persist(record, raw);
     });
   }
@@ -309,7 +328,7 @@ export class OutingStore {
       return this.persist(record, raw);
     });
   }
-  private identity(place: PlaceRecord): string { return String(place.properties.source_capture_id || ''); }
+  private identity(place: PlaceRecord): string { return propertyText(place.properties.source_capture_id); }
   async recordVisit(path: string, stopId: string, input: OutingVisitInput, options: OutingVisitOptions = {}): Promise<OutingRecord> {
     return this.host.exclusive(() => this.writeVisit(path, stopId, input, options));
   }
@@ -335,9 +354,9 @@ export class OutingStore {
       const sourceFile = this.host.app.vault.getAbstractFileByPath(place.path);
       if (!fileLike(sourceFile)) throw new Error('Restore the source note before reviewing this unfinished visit.');
       const sourceText = await this.host.app.vault.read(sourceFile), properties = readNote(sourceText).properties;
-      if (String(properties.source_capture_id || '') !== op.sourceIdentity) throw new Error('Restore the original source note before reviewing this unfinished visit.');
+      if (propertyText(properties.source_capture_id) !== op.sourceIdentity) throw new Error('Restore the original source note before reviewing this unfinished visit.');
       if (properties.sourcing_visit_receipts !== undefined && !Array.isArray(properties.sourcing_visit_receipts)) throw new Error('Review the source visit receipts before cancelling this attempt.');
-      const receipts = Array.isArray(properties.sourcing_visit_receipts) ? properties.sourcing_visit_receipts : [];
+      const receipts = isUnknownArray(properties.sourcing_visit_receipts) ? properties.sourcing_visit_receipts : [];
       if (receipts.some(value => object(value) && value.id === op.id)) throw new Error('This visit is already saved. Resume its completion instead of cancelling.');
       record.draft = { operationId: crypto.randomUUID(), stopId: op.stopId, input: structuredClone(op.input), updatedAt: timestamp() };
       delete record.operation;
@@ -409,7 +428,7 @@ export class OutingStore {
     if (!fileLike(sourceFile)) throw new Error('The source note is missing.');
     if (completedRetry) {
       const properties = readNote(await this.host.app.vault.read(sourceFile)).properties;
-      const receipts = Array.isArray(properties.sourcing_visit_receipts) ? properties.sourcing_visit_receipts : [];
+      const receipts = isUnknownArray(properties.sourcing_visit_receipts) ? properties.sourcing_visit_receipts : [];
       const receipt = receipts.find(value => object(value) && value.id === operationId);
       if (!object(receipt) || receipt.inputHash !== await hashText(JSON.stringify(input)) || receipt.outingId !== record.id || receipt.stopId !== stopId) throw new Error('This visit identifier has conflicting saved details.');
       return record;
@@ -426,9 +445,9 @@ export class OutingStore {
     }
     const op = record.operation!;
     const sourceRaw = await this.host.app.vault.read(sourceFile), properties = readNote(sourceRaw).properties;
-    if (String(properties.source_capture_id || '') !== op.sourceIdentity) throw new Error('The source note was replaced. Review the saved visit before continuing.');
+    if (propertyText(properties.source_capture_id) !== op.sourceIdentity) throw new Error('The source note was replaced. Review the saved visit before continuing.');
     if (properties.sourcing_visit_receipts !== undefined && !Array.isArray(properties.sourcing_visit_receipts)) throw new Error('The source has invalid visit receipts. Review its properties before continuing.');
-    const receipts = Array.isArray(properties.sourcing_visit_receipts) ? properties.sourcing_visit_receipts : [];
+    const receipts = isUnknownArray(properties.sourcing_visit_receipts) ? properties.sourcing_visit_receipts : [];
     const receipt = receipts.find(value => object(value) && value.id === op.id);
     const inputHash = await hashText(JSON.stringify(op.input));
     if (receipt) {

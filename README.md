@@ -1,8 +1,8 @@
 # Reseller sourcing
 
-An Obsidian plugin for planning sourcing trips, remembering places and recording visits. Version **0.11.0** is an **early release** for desktop and Android. Your records remain readable Markdown and YAML; inventory and sales can stay in your existing tools.
+An Obsidian plugin for planning sourcing trips, remembering places and recording visits. Version **0.11.1** is an **early release** for desktop and Android. Your records remain readable Markdown and YAML; inventory and sales can stay in your existing tools.
 
-Download the [0.11.0 release](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.11.0) for desktop or Android. Source: [an1uk/obsidian-reseller-sourcing](https://github.com/an1uk/obsidian-reseller-sourcing). The plugin is not yet listed in Community Plugins.
+Download the [0.11.1 release](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.11.1) for desktop or Android. Source: [an1uk/obsidian-reseller-sourcing](https://github.com/an1uk/obsidian-reseller-sourcing). The plugin is not yet listed in Community Plugins.
 
 ## Start in the workspace
 
@@ -74,7 +74,7 @@ The optional Guided tour can be deleted independently. Deleted example records o
 
 ## Build and install
 
-For the ready-to-install package, download **charity-sourcing-0.11.0.zip** from the [release page](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.11.0). The same release also provides **main.js**, **manifest.json** and **styles.css** separately, plus **release-checksums.json** with SHA-256 hashes. Desktop and Android use the same files. Follow the manual installation steps below.
+For the ready-to-install package, download **charity-sourcing-0.11.1.zip** from the [release page](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.11.1). The same release also provides **main.js**, **manifest.json** and **styles.css** separately, plus **release-checksums.json** with SHA-256 hashes. Desktop and Android use the same files. Follow the manual installation steps below.
 
 Use **Node.js 22 or newer** and npm:
 
@@ -82,11 +82,14 @@ Use **Node.js 22 or newer** and npm:
 git clone https://github.com/an1uk/obsidian-reseller-sourcing.git
 cd obsidian-reseller-sourcing
 npm ci
+npm run lint
 npm run package
 npm test
 ```
 
 `npm run package` type-checks and builds the plugin, then creates a universal ZIP, standard release assets and checksums in `dist/`. `npm run build` builds without packaging. Generated files and dependencies are excluded from Git.
+
+Source checks use the official Obsidian ESLint and Stylelint configurations, with explicit type-safety checks and zero-warning gates. CI runs with read-only permissions on source changes and pull requests. Only version-tag pushes can attest and publish; the standard release contains the exact five verified build assets. To verify a downloaded asset with GitHub CLI, run `gh attestation verify <file> --repo an1uk/obsidian-reseller-sourcing`. The ZIP and checksums are conveniences for manual installation; Obsidian installs only `main.js`, `manifest.json` and `styles.css`.
 
 Desktop and Android use the same plugin ID **charity-sourcing**, version, and three assets: **main.js**, **manifest.json**, **styles.css**. Minimum Obsidian version is **1.14.4**. No separate Android build or APK is needed.
 
@@ -96,8 +99,12 @@ The portable test suite skips three optional integration checks unless `CLIPPER_
 
 To attach an already-synced notebook on another device, let your existing sync method finish, then choose **Use existing notebook** in setup. Inspection is read-only; explicit attachment saves local settings without repairing or rewriting notes. The plugin includes no sync transport. Desktop folder and Chrome actions are guarded and unavailable on Android.
 
+## Access and privacy
+
+Routine browsing traverses the selected notebook. Explicit notebook attachment discovers candidate notebooks, and reviewed moves inspect relevant vault links to preserve backlinks and recovery. Clipboard copying occurs only after a user chooses a Copy action. The plugin writes the selected text; it never reads clipboard contents. If copying is unavailable, it provides selectable text instead.
+
 ## Credits and licence
 
 This project is MIT licensed; see [LICENSE](LICENSE). The map implementation is adapted from **Obsidian Maps 0.2.2**, MIT © 2025 Obsidian, pinned at `8703e98013fa20fb188746d24664452f41b17227`. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), [licenses/UPSTREAM.md](licenses/UPSTREAM.md) and the plugin's About / Credits.
 
-MapLibre, the RTL module and runtime dependency notices are packaged. Complete licence texts are embedded in `main.js` and readable/copyable in About / Credits, including a three-file installation. OpenFreeMap, OpenMapTiles and OpenStreetMap attribution is retained.
+MapLibre and runtime dependency notices are packaged. Complete licence texts are embedded in `main.js` and readable/copyable in About / Credits, including a three-file installation. OpenFreeMap, OpenMapTiles and OpenStreetMap attribution is retained.

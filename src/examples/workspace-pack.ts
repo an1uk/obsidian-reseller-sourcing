@@ -57,6 +57,6 @@ export async function workspaceExamplePack(pack: ExamplePack, root: string, vaul
     '- [ ] Open the finished outing and review its visits.\n\nDelete this folder whenever it stops being useful. The 24 places and their working controls remain.\n');
   const settings = JSON.parse(remap(JSON.stringify(pack.settings))) as ExamplePack['settings'];
   settings.assets = {};
-  for (const path of Object.keys(supplied)) if (files[path]) settings.assets[path] = { hash: await hashText(files[path]!), version: ASSET_VERSION };
+  for (const path of Object.keys(supplied)) if (files[path]) settings.assets[path] = { hash: await hashText(files[path]), version: ASSET_VERSION };
   return { files, settings };
 }

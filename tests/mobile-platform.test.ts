@@ -4,17 +4,18 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
 import { transformSync } from 'esbuild';
+import { markInputModal } from '../src/ui/modal-layout';
 
 type FakeElement = {
   tag?: string; textContent?: string; value?: string; rows?: number; readOnly?: boolean;
-  attributes: Record<string, string>; style: Record<string, string>; children: FakeElement[];
+  cls: string; attributes: Record<string, string>; style: Record<string, string>; children: FakeElement[];
   createEl(tag: string, options?: any): FakeElement; createDiv(options?: any): FakeElement;
   addClass(...names: string[]): void; empty(): void; setText(value: string): void;
   focus(): void; select(): void; selected?: boolean; focused?: boolean;
 };
 function element(tag = 'div', options: any = {}): FakeElement {
   return {
-    tag, textContent: options.text ?? '', attributes: options.attr ?? {}, style: {}, children: [],
+    tag, textContent: options.text ?? '', cls: options.cls ?? '', attributes: options.attr ?? {}, style: {}, children: [],
     createEl(childTag, childOptions) { const child = element(childTag, childOptions); this.children.push(child); return child; },
     createDiv(childOptions) { return this.createEl('div', childOptions); },
     addClass() {}, empty() { this.children = []; }, setText(text) { this.textContent = text; },
@@ -61,6 +62,7 @@ function mobileHost() {
   } as Record<string, unknown>, { get(target, key) { return target[String(key)] ?? Base; } });
   const module = { exports: {} as { default: new () => any } };
   const requireMobile = (id: string) => {
+    if (id === '../ui/modal-layout') return { markInputModal };
     if (id !== 'obsidian') { nativeRequests.push(id); throw Error('Native module unavailable on Android: ' + id); }
     return obsidian;
   };
@@ -85,7 +87,7 @@ test('the exact shared plugin bundle evaluates in Android mode with all Node and
   assert.deepEqual(nativeRequests, []);
   const manifest = JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
   assert.equal(manifest.id, 'charity-sourcing');
-  assert.equal(manifest.version, '0.11.0');
+  assert.equal(manifest.version, '0.11.1');
   assert.equal(manifest.isDesktopOnly, false);
   assert.equal(manifest.minAppVersion, '1.14.4');
 });
@@ -112,7 +114,7 @@ test('Android template location is selectable and desktop launch integrations ne
   const textarea = modal.contentEl.children.find((child: FakeElement) => child.tag === 'textarea');
   assert.ok(textarea);
   assert.match(textarea.value, /^Synced notebook\/System\/Templates\/Web Clipper/);
-  assert.equal(textarea.style.userSelect, 'text');
+  assert.equal(textarea.cls, 'charity-selectable-text');
   assert.equal(await plugin.openClipperImportTools(), false);
   assert.equal(adapterReads(), 0);
   assert.deepEqual(nativeRequests, []);
@@ -134,7 +136,7 @@ test('clipboard denial supplies selectable fallback text without losing the exac
   const textarea = modal.contentEl.children.find((child: FakeElement) => child.tag === 'textarea');
   assert.equal(textarea.value, value);
   assert.equal(textarea.attributes.readonly, 'true');
-  assert.equal(textarea.style.userSelect, 'text');
+  assert.equal(textarea.cls, 'charity-selectable-text');
   assert.deepEqual(host.nativeRequests, []);
 });
 

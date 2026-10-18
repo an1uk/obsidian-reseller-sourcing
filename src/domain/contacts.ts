@@ -1,8 +1,10 @@
+import { hasControlCharacters } from './guards';
+
 /** Produce a browser link only for ordinary HTTP(S) websites. */
 export function websiteUrl(value: unknown): string {
   if (typeof value !== 'string') return '';
   const raw = value.trim();
-  if (!raw || /[\s\\\u0000-\u001f\u007f]/.test(raw)) return '';
+  if (!raw || /[\s\\]/.test(raw) || hasControlCharacters(raw)) return '';
   const explicit = /^https?:\/\//i.test(raw);
   if (!explicit && (/^[a-z][a-z\d+.-]*:/i.test(raw) || raw.startsWith('//'))) return '';
   try {
@@ -21,7 +23,7 @@ export function websiteUrl(value: unknown): string {
 export function telephoneUrl(value: unknown): string {
   if (typeof value !== 'string') return '';
   let number = value.trim();
-  if (!number || /[\u0000-\u001f\u007f]/.test(number)) return '';
+  if (!number || hasControlCharacters(number)) return '';
   let extension = '';
   const match = number.match(/(?:\s*(?:ext\.?|extension|x)\s*|;ext=)(\d{1,10})$/i);
   if (match) { extension = ';ext=' + match[1]; number = number.slice(0, match.index).trim(); }

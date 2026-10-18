@@ -32,6 +32,7 @@ export class CustomGeolocateControl implements IControl {
 
 	onAdd(map: Map): HTMLElement {
 		this.map = map;
+		map.getContainer().ownerDocument.adoptNode(this.containerEl);
 
 		// Create the locate button
 		this.locateButton = this.containerEl.createEl('button', {
@@ -59,7 +60,8 @@ export class CustomGeolocateControl implements IControl {
 	}
 
 	private startTracking(): void {
-		if (!navigator.geolocation) {
+		const geolocation = this.containerEl.win.navigator.geolocation;
+		if (!geolocation) {
 			new Notice('Location services are not available');
 			return;
 		}
@@ -75,7 +77,7 @@ export class CustomGeolocateControl implements IControl {
 		// watchPosition reports the current position immediately, so there is no
 		// need for a separate getCurrentPosition call to seed the first fix
 		try {
-			const watchId = navigator.geolocation.watchPosition(
+			const watchId = geolocation.watchPosition(
 				(position) => {
 					if (this.isTracking && generation === this.trackingGeneration) this.updatePosition(position.coords.latitude, position.coords.longitude);
 				},
@@ -85,7 +87,7 @@ export class CustomGeolocateControl implements IControl {
 				GEOLOCATION_OPTIONS
 			);
 			if (this.isTracking && generation === this.trackingGeneration) this.watchId = watchId;
-			else navigator.geolocation.clearWatch(watchId);
+			else geolocation.clearWatch(watchId);
 		} catch {
 			this.stopTracking();
 			new Notice("Location could not start. Check the app permissions and try again.");
@@ -95,7 +97,7 @@ export class CustomGeolocateControl implements IControl {
 	private stopTracking(): void {
 		this.trackingGeneration++;
 		if (this.watchId !== null) {
-			navigator.geolocation.clearWatch(this.watchId);
+			this.containerEl.win.navigator.geolocation.clearWatch(this.watchId);
 			this.watchId = null;
 		}
 

@@ -3,6 +3,21 @@
 import { App, requestUrl } from 'obsidian';
 import { StyleSpecification } from 'maplibre-gl';
 import { transformMapboxStyle } from './mapbox-transform';
+import { isRecord, isUnknownArray } from '../domain/guards';
+
+/** Validate the shape consumed here; MapLibre validates style expressions and paint on load. */
+function isStyleSpecification(value: unknown): value is StyleSpecification {
+	if (!isRecord(value) || value.version !== 8 || !isRecord(value.sources) || !isUnknownArray(value.layers)) return false;
+	if (!Object.values(value.sources).every(source => isRecord(source) && typeof source.type === 'string'
+		&& ['vector', 'raster', 'raster-dem', 'geojson', 'video', 'image'].includes(source.type))) return false;
+	if (!value.layers.every(layer => isRecord(layer) && typeof layer.id === 'string' && typeof layer.type === 'string'
+		&& ['fill', 'line', 'symbol', 'circle', 'heatmap', 'fill-extrusion', 'raster', 'hillshade', 'background', 'color-relief'].includes(layer.type))) return false;
+	if (value.glyphs !== undefined && typeof value.glyphs !== 'string') return false;
+	if (value.projection !== undefined && !isRecord(value.projection)) return false;
+	if (value.sprite !== undefined && typeof value.sprite !== 'string' && (!isUnknownArray(value.sprite)
+		|| !value.sprite.every(sprite => isRecord(sprite) && typeof sprite.id === 'string' && typeof sprite.url === 'string'))) return false;
+	return true;
+}
 
 export class StyleManager {
 	private app: App;
@@ -33,7 +48,8 @@ export class StyleManager {
 			try {
 				const response = await requestUrl({ url: styleUrl, throw: false });
 				if (response.status >= 200 && response.status < 300) {
-					const styleJson = response.json as StyleSpecification;
+					const styleJson: unknown = response.json;
+					if (!isStyleSpecification(styleJson)) throw new Error('Map background returned an invalid style document');
 					// Extract access token from URL for Mapbox styles
 					const accessTokenMatch = styleUrl.match(/access_token=([^&]+)/);
 					const accessToken = accessTokenMatch ? accessTokenMatch[1] : '';

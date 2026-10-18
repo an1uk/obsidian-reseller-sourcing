@@ -3,7 +3,7 @@ import type { Coordinates } from '../types';
 export function validateCoordinates(value: unknown): Coordinates | null {
   if (!Array.isArray(value) || value.length !== 2) return null;
   const numbers = value.map(v => typeof v === 'number' ? v : typeof v === 'string' && /^-?(?:\d+(?:\.\d+)?|\.\d+)$/.test(v.trim()) ? Number(v) : NaN);
-  return numbers.every(Number.isFinite) && Math.abs(numbers[0]!) <= 90 && Math.abs(numbers[1]!) <= 180 ? [numbers[0]!, numbers[1]!] : null;
+  return numbers.every(Number.isFinite) && Math.abs(numbers[0]) <= 90 && Math.abs(numbers[1]) <= 180 ? [numbers[0], numbers[1]] : null;
 }
 
 interface Token { field: number; type: string; value: string; children: Token[] }
@@ -25,7 +25,7 @@ function tree(wire: string): Token[] | null {
     const output: Token[] = [];
     while (cursor < end) {
       const token = raw[cursor++]!;
-      const node: Token = { field: Number(token[1]), type: token[2]!, value: token[3]!, children: [] };
+      const node: Token = { field: Number(token[1]), type: token[2], value: token[3], children: [] };
       if (node.type === 'm') {
         if (!/^\d+$/.test(node.value)) throw Error('Bad message length');
         const limit = cursor + Number(node.value);
@@ -60,13 +60,13 @@ export function parseGooglePlaceUrl(value: string): GooglePlaceResult {
   const envelopes = roots.filter(t => t.field === 4 && t.type === 'm');
   // Only direct field-3 children of the place envelope identify the selected
   // place. Previous/search context lives beneath field 1 and is ignored.
-  const selected = envelopes.length === 1 ? envelopes[0]!.children.filter(t => t.field === 3 && t.type === 'm') : [];
+  const selected = envelopes.length === 1 ? envelopes[0].children.filter(t => t.field === 3 && t.type === 'm') : [];
   if (selected.length === 1) {
-    const node = selected[0]!;
+    const node = selected[0];
     const identities = node.children.filter(t => t.field === 1 && t.type === 's' && t.value);
     const locations = node.children.filter(t => t.field === 8 && t.type === 'm');
-    const coordinates = locations.length === 1 ? exactPair(locations[0]!.children) : null;
-    if (identities.length === 1 && coordinates) return { coordinates, placeId: identities[0]!.value, canonicalUrl };
+    const coordinates = locations.length === 1 ? exactPair(locations[0].children) : null;
+    if (identities.length === 1 && coordinates) return { coordinates, placeId: identities[0].value, canonicalUrl };
     return issue('The selected place has ambiguous or invalid coordinates. Place the pin manually.', canonicalUrl);
   }
   // Older minimal place links can contain just one bare 3d/4d pair.
@@ -74,7 +74,7 @@ export function parseGooglePlaceUrl(value: string): GooglePlaceResult {
   if (minimal) return { coordinates: minimal, canonicalUrl };
   const minimalMessages = roots.filter(t => t.field === 8 && t.type === 'm');
   if (minimalMessages.length === 1 && roots.every(t => (t.field === 8 && t.type === 'm') || (t.field === 16 && (t.type === 's' || t.type === 'z')))) {
-    const coordinates = exactPair(minimalMessages[0]!.children);
+    const coordinates = exactPair(minimalMessages[0].children);
     if (coordinates) return { coordinates, canonicalUrl };
   }
   return issue('The destination cannot be distinguished safely from other places in this URL. Place the pin manually.', canonicalUrl);

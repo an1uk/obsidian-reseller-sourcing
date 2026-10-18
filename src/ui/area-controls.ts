@@ -62,7 +62,7 @@ export class AreaEditor {
     const wrap = parent.createDiv('charity-area-editor');
     const townList = wrap.createEl('datalist', { attr: { id: 'sourcing-town-' + crypto.randomUUID() } });
     for (const area of this.areas.filter(area => !area.parentPath)) townList.createEl('option', { value: area.name });
-    const town = new Setting(wrap).setName('Town / parent area').setDesc('Required. Choose a saved town or type a new name, such as Exampletown.');
+    const town = new Setting(wrap).setName('Town / parent area').setDesc('Required. Choose a saved town or type a new town name.');
     town.addText(t => {
       this.townInput = t.inputEl; t.inputEl.addClass('charity-area-town');
       t.inputEl.setAttribute('aria-label', 'Town / parent area'); t.inputEl.setAttribute('list', townList.id);
@@ -84,7 +84,7 @@ export class AreaEditor {
       this.applyHints(); this.sync(); this.changed();
     }, 'Search saved towns').open()));
     this.localityOptions = wrap.createEl('datalist', { attr: { id: 'sourcing-locality-' + crypto.randomUUID() } });
-    const locality = new Setting(wrap).setName('Locality').setDesc('Optional. Leave blank for the town itself, or type an area such as Riverside.');
+    const locality = new Setting(wrap).setName('Locality').setDesc('Optional. Leave blank for the town itself, or type a smaller area.');
     locality.addText(t => {
       this.localityInput = t.inputEl; t.inputEl.addClass('charity-area-locality');
       t.inputEl.setAttribute('aria-label', 'Locality'); t.inputEl.setAttribute('list', this.localityOptions!.id);
@@ -139,7 +139,7 @@ export class AreaEditor {
       const matches = this.selection.townPath ? matchAreaHints(this.address, this.selection.townPath, this.plugin.settings.areaHints, this.areas) : [];
       const unique = [...new Map(matches.map(hint => [hint.localityPath || hint.townPath, hint])).values()];
       if (unique.length === 1) {
-        const hint = unique[0]!, target = this.areas.find(area => area.path === (hint.localityPath || hint.townPath));
+        const hint = unique[0], target = this.areas.find(area => area.path === (hint.localityPath || hint.townPath));
         if (target) { this.selection = areaSelectionFor(target.path, this.areas); messages.push('Remembered address phrase “' + hint.phrase + '”: ' + target.label + '.'); }
       } else if (unique.length > 1) { this.conflictPending = true; messages.push('Several remembered address rules match. Choose a locality or Use town only; none has been selected automatically.'); }
       else if (address.locality && (!this.townEdited || normalized(address.town) === normalized(this.selection.town))) {
@@ -162,7 +162,7 @@ export class AreaEditor {
     if (this.selection.locality.trim() && !this.selection.localityPath) staged.push([this.selection.town.trim(), this.selection.locality.trim()].filter(Boolean).join(' → '));
     this.staged?.setText(staged.length ? 'Created when you save: ' + staged.join('; ') + '.' : '');
     const matching = this.areas.filter(area => this.belongs(area, this.selection.townPath) && area.name.trim().toLocaleLowerCase() === this.selection.locality.trim().toLocaleLowerCase());
-    if (this.selection.locality && !this.selection.localityPath && matching.length > 1) this.staged?.setText('Several saved areas have this name. Use Choose saved area to select the correct hierarchy.');
+    if (this.selection.locality && !this.selection.localityPath && matching.length > 1) this.staged?.setText('Several saved areas have this name. Choose a saved area to select the correct hierarchy.');
     if (this.selection.localityPath) {
       const selected = this.areas.find(area => area.path === this.selection.localityPath);
       if (selected && selected.segments.length > 2) this.staged?.setText('Selected hierarchy: ' + selected.label + '.');

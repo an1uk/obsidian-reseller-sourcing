@@ -67,7 +67,7 @@ function harness(saved = true) {
   const source = fs.readFileSync(new URL('../src/ui/outing-planner.ts', import.meta.url), 'utf8');
   vm.runInNewContext(transformSync(source, { loader: 'ts', format: 'cjs', target: 'es2022' }).code, {
     module, exports: module.exports, structuredClone, navigator: {}, Number, Map, Set, Error,
-    require(id: string) {
+    require(id: string) { if (id.endsWith('modal-layout')) return { markInputModal() {} };
       if (id === 'obsidian') return { Modal, Component, Setting, Notice: class { constructor(message: string) { notices.push(message); } } };
       if (id === '../units') return units;
       if (id === '../outings/planning') return { defaultPlanningOptions, buildOutingOptimisationPreview: (_r: unknown, _p: unknown, _h: unknown, options: any) => preview(options), formatPlanningTime: () => '09:30' };

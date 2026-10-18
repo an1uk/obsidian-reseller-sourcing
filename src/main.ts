@@ -5,18 +5,16 @@ import { renderVisitsHub, embeddedVisitsHubState } from './ui/visit-history';
 import { renderVisitInsights } from './ui/visit-insights';
 import { embeddedInsightsState } from './ui/insights-state';
 import { renderVisitNote, renderVisitRecovery } from './ui/visits';
-import { normaliseDistanceUnit, distanceFromKm, distanceToKm } from './units';
-import { MarkdownRenderChild, Modal, Notice, Platform, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
-import type { App } from 'obsidian';
+import { FileSystemAdapter, MarkdownRenderChild, Modal, Notice, Platform, Plugin, TFile } from 'obsidian';
 import { DEFAULT_SETTINGS, type Coordinates, type PlaceKind, type Settings } from './types';
 import { SourcingStore } from './storage/store';
 import { createMapRegistration, MAP_VIEW_TYPE, shutdownMapRuntime, type MapHost, type PlaceMap } from './map';
-import { AreaHintsModal, CaptureModal, CreditsModal, LocalityModal, NotebookMoveModal, SetupModal, VisitModal, button, errorText, manualDraft, pickCapture, pickPlace, renderPlace, renderContextBanner, renderExamplesEntry, renderPracticeSettings, releasePracticeSettingsOwner } from './ui';
+import { CaptureModal, LocalityModal, NotebookMoveModal, SetupModal, VisitModal, button, errorText, manualDraft, pickCapture, pickPlace, renderPlace, renderPracticeSettings, releasePracticeSettingsOwner } from './ui';
 import { googleMapsUrl, navigationUrl, resolveParking, validateRootPath } from './domain';
 import { registerPlacePropertiesDefault } from './ui/properties';
 import { ClipperSetupModal, showClipperUpdateNotice } from './ui/clipper-setup';
 import { openChromeClipperSettings } from './platform/clipper-browser';
-import { CLIPPER_TEMPLATE_RELEASE } from './capture';
+import { SourcingSettings } from './ui/settings';
 import { showSelectableText } from './platform/clipboard';
 import { handleNotebookNavigationClick } from './platform/notebook-links';
 import { NewOutingModal, renderOuting, renderOutingsHome } from './ui/outings';
@@ -27,6 +25,7 @@ import { ExamplesContext } from './examples/context';
 import { MutationCoordinator } from './storage/coordinator';
 import { SourcingWorkspace, WORKSPACE_VIEW, openSourcingWorkspace, routeForPath } from './workspace/view';
 import { PlacePreparationModal } from './workspace/place-preparation';
+import { parseSettings } from './platform/settings-data';
 
 export default class CharitySourcingPlugin extends Plugin implements NotebookContext, NotebookUiHost {
   readonly kind = 'real' as const;
@@ -81,12 +80,8 @@ export default class CharitySourcingPlugin extends Plugin implements NotebookCon
   private captureTimer?: number;
   private clipperListeners = new Set<() => void>();
   async onload(): Promise<void> {
-    this.settings = { ...structuredClone(DEFAULT_SETTINGS), ...await this.loadData() };
-    this.settings.distanceUnit = normaliseDistanceUnit(this.settings.distanceUnit);
-    if (!Array.isArray(this.settings.sourceTypes) || !this.settings.sourceTypes.length) this.settings.sourceTypes = [...DEFAULT_SETTINGS.sourceTypes];
-    if (!Array.isArray(this.settings.recentLocalities)) this.settings.recentLocalities = [];
-    this.settings.defaultSourceType ||= 'Charity shop';
-    if (!Array.isArray(this.settings.areaHints)) this.settings.areaHints = [];
+    const saved: unknown = await this.loadData();
+    this.settings = parseSettings(saved);
     validateRootPath(this.settings.root);
     this.store = new SourcingStore(this.app, this.settings, () => this.saveSettings(), {coordinator:this.coordinator});
     this.examples = new ExamplesManager(this.app, () => this.store.root,this.coordinator,() => this.settings);
@@ -120,7 +115,7 @@ export default class CharitySourcingPlugin extends Plugin implements NotebookCon
       this.app.workspace.onLayoutReady(() => this.app.workspace.iterateAllLeaves(leaf => registerDocument(leaf.view.containerEl.ownerDocument)));
     }
     this.addRibbonIcon('store', 'Reseller sourcing: Home', () => void this.inCurrentContext(c => c.home()));
-    this.addCommand({ id: 'open-notebook', name: 'Open Home', callback: () => void this.inCurrentContext(c=>c.home()) });
+    this.addCommand({ id: 'open-notebook', name: 'Open sourcing workspace', callback: () => void this.inCurrentContext(c=>c.home()) });
     this.addCommand({ id: 'clipper-setup', name: Platform.isMobileApp ? 'Desktop capture help' : 'Set up / update Web Clipper', callback: () => void this.inCurrentContext(c=>c.openClipperSetup()) });
     this.addCommand({ id: 'setup', name: 'Set up / repair notebook', callback: () => void this.inCurrentContext(c=>new SetupModal(c).open()) });
     this.addCommand({ id: 'new-shop', name: 'New source', callback: () => void this.inCurrentContext(c=>c.newPlace('shop')) });
@@ -132,7 +127,7 @@ export default class CharitySourcingPlugin extends Plugin implements NotebookCon
       const file = path ? this.app.vault.getAbstractFileByPath(path) : undefined;
       const props = file instanceof TFile ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined;
       const valid = !!path && !!this.contextRootForPath(path) && Array.isArray(props?.tags) && props.tags.some((tag: unknown) => tag === 'sourcing-source' || tag === 'charity-shop');
-      if (valid && !checking) void this.inCurrentContext(c=>new VisitModal(c,path!).open()); return valid;
+      if (valid && !checking) void this.inCurrentContext(c=>new VisitModal(c,path).open()); return valid;
     } });
     this.addCommand({ id: 'record-visit', name: 'Record a visit', callback: () => void this.inCurrentContext(c => chooseVisitSource(c)) });
     this.addCommand({ id: 'new-outing', name: 'New outing', callback: () => void this.inCurrentContext(c=>c.newOuting()) });
@@ -150,8 +145,8 @@ export default class CharitySourcingPlugin extends Plugin implements NotebookCon
     this.registerEvent(this.app.metadataCache.on('changed', file => { if (isInbox(file.path)) schedule(); }));
     this.register(() => window.clearTimeout(this.captureTimer));
     this.app.workspace.onLayoutReady(() => {
-      if (this.store.migrationActive) new Notice('Reseller sourcing needs organisation recovery. Open Setup / help to restore the previous organisation.', 15000);
-      else if (!this.settings.setupVersion) new Notice('Reseller sourcing is ready. Open Setup to create a notebook or use one already synced to this vault.', 10000);
+      if (this.store.migrationActive) new Notice('Reseller sourcing needs organisation recovery. Open setup / help to restore the previous organisation.', 15000);
+      else if (!this.settings.setupVersion) new Notice('Reseller sourcing is ready. Open setup to create a notebook or use one already synced to this vault.', 10000);
       else if (Platform.isMobileApp) schedule();
       else void this.prepareClipperGuidance().finally(schedule);
     });
@@ -173,7 +168,7 @@ export default class CharitySourcingPlugin extends Plugin implements NotebookCon
   }
   async saveSettings(): Promise<void> { await this.saveData(this.settings); }
   beginEditing(): (() => void) | undefined {
-    if (this.rootOperation || this.store.migrationActive) { new Notice('Editing is paused while the notebook is moving or awaiting recovery. Open Setup / help.'); return; }
+    if (this.rootOperation || this.store.migrationActive) { new Notice('Editing is paused while the notebook is moving or awaiting recovery. Open setup / help.'); return; }
     this.editors++; let ended = false;
     return () => { if (!ended) { ended = true; this.editors--; } };
   }
@@ -254,8 +249,9 @@ export default class CharitySourcingPlugin extends Plugin implements NotebookCon
   }
   async revealTemplates(kind: PlaceKind = 'shop'): Promise<void> {
     const path = this.store.paths.templates + '/Web Clipper', adapter = this.app.vault.adapter;
-    if (Platform.isDesktopApp && 'getBasePath' in adapter && typeof adapter.getBasePath === 'function') {
-      const { shell } = require('electron'); shell.showItemInFolder(adapter.getBasePath() + '/' + path + '/Capture ' + (kind === 'shop' ? 'source' : 'parking') + '.json');
+    if (Platform.isDesktopApp && adapter instanceof FileSystemAdapter) {
+      const { shell } = await import('electron');
+      shell.showItemInFolder(adapter.getBasePath() + '/' + path + '/Capture ' + (kind === 'shop' ? 'source' : 'parking') + '.json');
     } else showSelectableText(this.app, path, 'Templates folder in this vault');
   }
 }
@@ -276,7 +272,7 @@ class NotebookBlock extends MarkdownRenderChild {
       const changedRoot = this.plugin.contextRootForPath(file.path);
       const examplesStatus = file.path === this.plugin.store.root + '/Examples/System/Practice state.json' && this.source.includes('view: home');
       if (!examplesStatus && ownRoot !== changedRoot && !(this.plugin.settings.previousRoots ?? []).some(r => file.path.startsWith(r + '/Capture inbox/'))) return;
-      window.clearTimeout(this.timer); this.timer = window.setTimeout(() => {
+      (this.containerEl.ownerDocument.defaultView ?? window).clearTimeout(this.timer); this.timer = (this.containerEl.ownerDocument.defaultView ?? window).setTimeout(() => {
         const focused = this.containerEl.ownerDocument.activeElement;
         if (focused && this.containerEl.contains(focused) && focused.matches('input,textarea,select,[contenteditable=true]')) { this.pendingRefresh = true; return; }
         this.pendingRefresh = false; void this.render();
@@ -286,8 +282,8 @@ class NotebookBlock extends MarkdownRenderChild {
     this.registerEvent(this.plugin.app.vault.on('create', changed));
     this.registerEvent(this.plugin.app.vault.on('delete', changed));
     this.registerEvent(this.plugin.app.vault.on('rename', (f, old) => { changed(f); changed({ path: old }); }));
-    this.registerDomEvent(this.containerEl, 'focusout', () => { if (this.pendingRefresh) { window.clearTimeout(this.timer); this.timer = window.setTimeout(() => { const focused = this.containerEl.ownerDocument.activeElement; if (focused && this.containerEl.contains(focused) && focused.matches('input,textarea,select,[contenteditable=true]')) return; this.pendingRefresh = false; void this.render(); }, 180); } });
-    this.register(() => { rememberRenderState(this.containerEl, this.path); this.generation++; window.clearTimeout(this.timer); });
+    this.registerDomEvent(this.containerEl, 'focusout', () => { if (this.pendingRefresh) { (this.containerEl.ownerDocument.defaultView ?? window).clearTimeout(this.timer); this.timer = (this.containerEl.ownerDocument.defaultView ?? window).setTimeout(() => { const focused = this.containerEl.ownerDocument.activeElement; if (focused && this.containerEl.contains(focused) && focused.matches('input,textarea,select,[contenteditable=true]')) return; this.pendingRefresh = false; void this.render(); }, 180); } });
+    this.register(() => { rememberRenderState(this.containerEl, this.path); this.generation++; (this.containerEl.ownerDocument.defaultView ?? window).clearTimeout(this.timer); });
   }
   private disposeRendered():void {
     releasePracticeSettingsOwner(this);
@@ -307,7 +303,7 @@ class NotebookBlock extends MarkdownRenderChild {
     if (['home', 'place', 'outing', 'outings', 'visit', 'visits', 'locality', 'localities'].includes(view)) {
       if (this.rendered) this.removeChild(this.rendered);
       this.rendered = undefined; this.map = undefined; this.containerEl.empty();
-      button(this.containerEl, view === 'home' ? 'Open Sourcing workspace' : 'Open in Sourcing workspace', () => context!.openFile(this.path), true);
+      button(this.containerEl, view === 'home' ? 'Open Sourcing workspace' : 'Open in Sourcing workspace', () => context.openFile(this.path), true);
       return;
     }
     if (view === 'place' && this.rendered && this.map) {
@@ -348,7 +344,7 @@ class NotebookBlock extends MarkdownRenderChild {
           }
         } else {
           button(wrapper, 'New locality', () => context.newLocality(), true);
-          if (!values.length) wrapper.createEl('p', { text: 'Create a town first, then choose it as the parent of nearby areas. For example: Exampletown → Riverside.', cls: 'charity-empty-state' });
+          if (!values.length) wrapper.createEl('p', { text: 'Create a town first, then choose it as the parent of nearby areas.', cls: 'charity-empty-state' });
           const search = wrapper.createEl('input', { type: 'search', placeholder: 'Search town or area', attr: { 'aria-label': 'Search areas' } });
           const list = wrapper.createEl('ul', { cls: 'charity-locality-list' });
           const renderList = () => {
@@ -379,94 +375,6 @@ class ConfirmLocation extends Modal {
     }, true);
   }
 }
-class SourcingSettings extends PluginSettingTab {
-  constructor(app: App, private plugin: CharitySourcingPlugin) { super(app, plugin); }
-  display(): void {
-    const el = this.containerEl; el.empty();
-    new Setting(el).setName('Reseller sourcing').setHeading();
-    el.createEl('p', { text: 'Vault: ' + this.app.vault.getName() + ' · Version ' + this.plugin.manifest.version + '. The notebook is a folder inside this vault.' });
-    new Setting(el).setName(this.plugin.examplesAvailable ? 'Fictional examples' : 'Add fictional examples').setDesc('A separate practice notebook with 24 sources. Added only when you choose; deleted examples stay deleted.').addButton(b=>b.setButtonText(this.plugin.examplesAvailable ? 'Open examples' : 'Add examples').onClick(()=>this.plugin.showExamples()));
-    new Setting(el).setName('Open notebook').setDesc(this.plugin.settings.root).addButton(b => b.setButtonText('Open notebook').setCta().onClick(() => void this.plugin.home()));
-    const folder = new Setting(el).setName('Notebook folder').setDesc('Choose where the notebook lives inside this vault.');
-    if (this.plugin.settings.setupVersion) folder.addButton(b => b.setButtonText('Move notebook…').onClick(() => new NotebookMoveModal(this.plugin).open()));
-    else folder.addText(t => {
-      t.setValue(this.plugin.settings.root); t.inputEl.onchange = () => { void (async () => {
-        try { this.plugin.settings.root = validateRootPath(t.getValue()); await this.plugin.saveSettings(); }
-        catch (e) { new Notice(errorText(e)); t.setValue(this.plugin.settings.root); }
-      })(); };
-    });
-    if (this.plugin.store.migrationActive) new Setting(el).setName('Organisation recovery required').setDesc('Capture and editing are paused. Use Setup / help to restore the previous organisation.').addButton(b => b.setButtonText('Recovery').onClick(() => new SetupModal(this.plugin).open()));
-    const defaults = el.createEl('datalist', { attr: { id: 'sourcing-default-types-' + crypto.randomUUID() } });
-    for (const type of [...new Set([...this.plugin.settings.sourceTypes, this.plugin.settings.defaultSourceType])]) defaults.createEl('option', { value: type });
-    new Setting(el).setName('Default source type').setDesc('Used only when a new capture has no explicit type. You can type a custom default; existing notes stay unchanged.').addText(t => {
-      t.inputEl.setAttribute('list', defaults.id); t.inputEl.setAttribute('aria-label', 'Default source type');
-      t.setValue(this.plugin.settings.defaultSourceType); t.inputEl.onchange = () => {
-        const value = t.getValue().trim();
-        if (!value || value.length > 80 || /[\r\n]/.test(value)) { new Notice('Enter a source type of 1–80 characters.'); t.setValue(this.plugin.settings.defaultSourceType); return; }
-        const previous = this.plugin.settings.defaultSourceType; this.plugin.settings.defaultSourceType = value;
-        void this.plugin.saveSettings().catch(e => { this.plugin.settings.defaultSourceType = previous; t.setValue(previous); new Notice(errorText(e)); });
-      };
-    });
-    new Setting(el).setName('Remembered address rules').setDesc('Review the phrases and towns used to suggest localities. Edit, disable or remove any rule.')
-      .addButton(b => b.setButtonText('Manage address rules').onClick(() => new AreaHintsModal(this.plugin).open()));
-    new Setting(el).setName('Source types').setDesc('One per line. These are capture suggestions; a source can also use a custom type. Existing notes keep their assigned type.').addTextArea(t => {
-      t.inputEl.rows = 5; t.setValue(this.plugin.settings.sourceTypes.join('\n'));
-      t.inputEl.onchange = () => {
-        const values = [...new Set(t.getValue().split('\n').map(v => v.trim()).filter(Boolean))];
-        if (!values.length) { new Notice('Keep at least one source type.'); return; }
-        this.plugin.settings.sourceTypes = values; void this.plugin.saveSettings().catch(e => new Notice(errorText(e)));
-      };
-    });
-    let updateRadiusDisplay = () => {};
-    new Setting(el).setName('Distance units').setDesc('Display miles or kilometres. Saved pins and calculations keep their original precision.').addDropdown(control => {
-      control.selectEl.setAttribute('aria-label', 'Distance units');
-      control.addOption('miles', 'Miles').addOption('km', 'Kilometres').setValue(normaliseDistanceUnit(this.plugin.settings.distanceUnit));
-      control.onChange(value => {
-        const previous = this.plugin.settings.distanceUnit;
-        this.plugin.settings.distanceUnit = normaliseDistanceUnit(value); updateRadiusDisplay();
-        control.selectEl.disabled = true;
-        void this.plugin.saveSettings().catch(error => {
-          this.plugin.settings.distanceUnit = previous; control.setValue(previous); updateRadiusDisplay(); new Notice(errorText(error));
-        }).finally(() => control.selectEl.disabled = false);
-      });
-    });
-    const radiusSetting = new Setting(el).setDesc('Suggest areas with an assigned source or parking pin nearby. You always choose.');
-    radiusSetting.addText(control => {
-      control.inputEl.type = 'number'; control.inputEl.step = 'any'; control.inputEl.setAttribute('aria-label', 'Nearby locality radius');
-      updateRadiusDisplay = () => {
-        const unit = normaliseDistanceUnit(this.plugin.settings.distanceUnit);
-        radiusSetting.setName('Nearby locality radius (' + unit + ')');
-        control.inputEl.min = String(distanceFromKm(.1, unit)); control.inputEl.max = String(distanceFromKm(50, unit));
-        control.setValue(String(Number(distanceFromKm(this.plugin.settings.suggestionKm, unit).toFixed(3))));
-      };
-      updateRadiusDisplay();
-      control.inputEl.onchange = () => {
-        const unit = normaliseDistanceUnit(this.plugin.settings.distanceUnit), raw = control.getValue().trim();
-        const km = raw ? distanceToKm(Number(raw), unit) : NaN;
-        if (!Number.isFinite(km) || km < .1 || km > 50) {
-          new Notice('Use a radius from ' + distanceFromKm(.1, unit) + ' to ' + distanceFromKm(50, unit) + ' ' + unit + '.'); updateRadiusDisplay(); return;
-        }
-        const previous = this.plugin.settings.suggestionKm; this.plugin.settings.suggestionKm = km;
-        void this.plugin.saveSettings().catch(error => { this.plugin.settings.suggestionKm = previous; updateRadiusDisplay(); new Notice(errorText(error)); });
-      };
-    });
-    new Setting(el).setName('Web Clipper templates').setDesc(Platform.isMobileApp ? 'Configure browser capture on desktop. Notes and manual entry work here.' : 'Available release v' + CLIPPER_TEMPLATE_RELEASE + '. Copy JSON, follow import steps and confirm each version.').addButton(b => b.setButtonText(Platform.isMobileApp ? 'Desktop capture help' : 'Set up / update').onClick(() => this.plugin.openClipperSetup()));
-    new Setting(el).setName('Components and capture templates').addButton(b => b.setButtonText('Setup / repair').onClick(() => new SetupModal(this.plugin).open()));
-    el.createEl('p', { text: this.plugin.basesReady ? 'Core Bases is available. No other community plugin is required.' : 'Enable Bases in Settings → Core plugins, then reload this plugin.' });
-    new Setting(el).setName('Map backgrounds').setHeading();
-    el.createEl('p', { text: 'Default: free OpenFreeMap / OpenStreetMap. Custom tiles accept a style URL or {z}/{x}/{y} raster URL. Provider attribution is retained. Reload open maps after changing backgrounds.' });
-    for (const tile of this.plugin.settings.tileSets) {
-      const row = el.createDiv('charity-tile-settings');
-      new Setting(row).setName('Name').addText(t => t.setValue(tile.name).onChange(v => { tile.name = v; void this.plugin.saveSettings(); }));
-      for (const [key, label] of [['lightTiles', 'Light tiles'], ['darkTiles', 'Dark tiles']] as const) new Setting(row).setName(label).addText(t => t.setValue(tile[key]).onChange(v => { tile[key] = v.trim(); void this.plugin.saveSettings(); }));
-      button(row, 'Remove background', async () => { this.plugin.settings.tileSets = this.plugin.settings.tileSets.filter(v => v.id !== tile.id); await this.plugin.saveSettings(); this.display(); });
-    }
-    button(el, 'Add custom background', async () => { this.plugin.settings.tileSets.push({ id: crypto.randomUUID(), name: 'Custom', lightTiles: '', darkTiles: '' }); await this.plugin.saveSettings(); this.display(); });
-    new Setting(el).setName('About and licences').addButton(b => b.setButtonText('Credits').onClick(() => new CreditsModal(this.plugin).open()));
-  }
-}
-
-
 class ExamplesModal extends Modal {
   private closed = false;
   constructor(private plugin:CharitySourcingPlugin) {super(plugin.app);}
@@ -486,7 +394,7 @@ class ExamplesModal extends Modal {
       return;
     }
     if(status.state==='conflict') return;
-    el.createEl('p',{text:'All shop details and observations are invented. Real notes stay separate. You can delete individual examples, the Guided tour folder, or all of Examples; repairs and updates never restore them.'});
+    el.createEl('p',{text:'All shop details and observations are invented. You can delete individual examples, the optional tour or the entire example notebook; repairs and updates never restore them.'});
     const progress=el.createDiv({attr:{role:'status','aria-live':'polite'}});
     const create=button(el,status.state==='partial'?'Continue adding examples':'Add examples',async()=>{
       progress.setText('Adding the fictional example notebook...'); progress.removeClass('charity-error');

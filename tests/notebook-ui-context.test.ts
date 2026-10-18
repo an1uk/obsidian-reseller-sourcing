@@ -61,7 +61,7 @@ function harness() {
   const source = fs.readFileSync(new URL('../src/ui.ts', import.meta.url), 'utf8');
   vm.runInNewContext(transformSync(source, { loader: 'ts', format: 'cjs', target: 'es2022' }).code, {
     module, exports: module.exports, structuredClone, crypto: { randomUUID: () => 'test-ui-id' },
-    require(id: string) {
+    require(id: string) { if (id.endsWith('modal-layout')) return { markInputModal() {} };
       if (id === 'obsidian') return obsidian;
       if (id === './units') return units;
       if (id === './storage/markdown') return { localDate: () => '2026-10-17' };

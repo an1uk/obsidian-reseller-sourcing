@@ -27,8 +27,8 @@ export function getAddressHints(address: string): AddressHints {
   if (!areaName(town)) return { town: '', locality: '', phrase: '' };
   const preceding = parts.slice(0, townIndex);
   const roadIndexes = preceding.flatMap((part, index) => isRoad(part) ? [index] : []);
-  const afterRoad = roadIndexes.length === 1 ? preceding.slice(roadIndexes[0]! + 1) : [];
-  const locality = afterRoad.length === 1 && areaName(afterRoad[0]!) ? afterRoad[0]! : '';
+  const afterRoad = roadIndexes.length === 1 ? preceding.slice(roadIndexes[0] + 1) : [];
+  const locality = afterRoad.length === 1 && areaName(afterRoad[0]) ? afterRoad[0] : '';
   const premises = preceding.find(part => building.test(part) && !isRoad(part)) ?? '';
   const phrase = premises.replace(/^(?:(?:unit|shop|suite|building|no[.]?)\s*)?\d+[a-z]?(?:\s*[-–/]\s*\d+[a-z]?)?(?:\s+|$)/i, '').trim() || locality;
   return { town, locality, phrase };

@@ -1,3 +1,5 @@
+import { hasControlCharacters } from '../domain/guards';
+
 export interface NotebookNavigationHandlers {
   root: () => string;
   rootForPath?: (path:string) => string|undefined;
@@ -11,7 +13,7 @@ interface LinkElement {
 }
 function localPlacePath(path: string, root: string): boolean {
   return path.endsWith('.md') && ['Sources', 'Shops', 'Parking'].some(folder => path.startsWith(root + '/' + folder + '/')) &&
-    !/[\\\x00-\x1f]/.test(path) && !path.split('/').some(part => !part || part === '.' || part === '..');
+    !path.includes('\\') && !hasControlCharacters(path, false) && !path.split('/').some(part => !part || part === '.' || part === '..');
 }
 /**
  * Synced Bases may retain the vault name from their creation device. Route only
@@ -33,7 +35,8 @@ export function handleNotebookNavigationClick(event: Event, handlers: NotebookNa
     parsed.username || parsed.password || parsed.port || parsed.hash) return false;
   if (parsed.searchParams.getAll('action').length !== 1 || parsed.searchParams.getAll('path').length !== 1 ||
     parsed.searchParams.getAll('vault').length > 1) return false;
-  const action = parsed.searchParams.get('action'), path = parsed.searchParams.get('path')!;
+  const action = parsed.searchParams.get('action'), path = parsed.searchParams.get('path');
+  if (!path) return false;
   if (action !== 'drive' && action !== 'walk' && action !== 'listing') return false;
   let root: string; try { root = handlers.rootForPath?.(path) ?? handlers.root(); } catch { return false; }
   if (!localPlacePath(path, root)) return false;

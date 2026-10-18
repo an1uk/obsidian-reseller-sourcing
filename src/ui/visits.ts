@@ -1,9 +1,10 @@
+import { markInputModal, modalWindow } from './modal-layout';
 import { Component, Modal, Notice, Setting } from 'obsidian';
 import type { NotebookContext } from '../notebook-context';
 import type { PlaceRecord, VisitInput } from '../types';
 import type { VisitRecord, VisitOperation } from '../visits/types';
 import { localDate } from '../storage/markdown';
-import { details, errorText, renderContextBanner } from '../ui';
+import { details, errorText, renderContextBanner, propertyText } from '../ui';
 
 const clone = <T>(value: T): T => structuredClone(value);
 const HAUL_LABELS = ['Weak', 'Modest', 'Good', 'Strong', 'Exceptional'];
@@ -140,7 +141,7 @@ export function renderVisitFields(parent: HTMLElement, input: VisitInput, change
   const sourceUpdates = details(parent, 'Update source assessment');
   sourceUpdates.open = updateAssessment || input.updateLastVisited;
   new Setting(sourceUpdates).setName('Update last visited').setDesc('Only changes the source date when selected.').addToggle(control => control.setValue(input.updateLastVisited).onChange(value => { input.updateLastVisited = value; changed(); }));
-  let rating = input.rating ?? Number(options.source?.properties.rating ?? 0), takeaway = input.comments ?? String(options.source?.properties.comments ?? '');
+  let rating = input.rating ?? Number(options.source?.properties.rating ?? 0), takeaway = input.comments ?? propertyText(options.source?.properties.comments);
   const assessment = sourceUpdates.createDiv();
   new Setting(sourceUpdates).setName('Update current assessment').setDesc('Only changes the source when selected.').addToggle(control => control.setValue(updateAssessment).onChange(value => {
     updateAssessment = value; assessment.toggle(value); input.rating = value ? rating : undefined; input.comments = value ? takeaway : undefined; changed();
@@ -199,7 +200,7 @@ export class StructuredVisitModal extends Modal {
   private operationId = crypto.randomUUID();
   private background = () => { if (this.contentEl.ownerDocument?.hidden) void this.flush().catch(error => this.draftFailure(error)); };
   constructor(private context: NotebookContext, private sourcePath: string, private visitPath?: string) { super(context.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     if (!(this.finishEditing = this.context.beginEditing())) { this.close(); return; }
     this.modalEl.addClass('charity-visit-modal', 'charity-structured-visit-modal');
     this.contentEl.ownerDocument?.addEventListener('visibilitychange', this.background);
@@ -258,9 +259,9 @@ export class StructuredVisitModal extends Modal {
     discard.onclick = () => { void this.discard(); };
   }
   private schedule(): void {
-    this.changed = true; window.clearTimeout(this.timer);
+    this.changed = true; modalWindow(this).clearTimeout(this.timer);
     this.status?.setText('Saving draft...');
-    this.timer = window.setTimeout(() => { void this.flush().catch(error => this.draftFailure(error)); }, 500);
+    this.timer = modalWindow(this).setTimeout(() => { void this.flush().catch(error => this.draftFailure(error)); }, 500);
   }
   private draftFailure(error: unknown): void {
     if (!this.closed) { this.status?.setText('Draft not saved: ' + errorText(error)); this.status?.addClass('charity-error'); }
@@ -273,11 +274,11 @@ export class StructuredVisitModal extends Modal {
     section.createEl('p', { text: 'Another saved draft has been kept. Your entered details remain in this form. Copy them below before closing, then reopen the saved draft to review it.', cls: 'charity-hint' });
     const input = this.fields?.snapshot() ?? clone(this.input);
     const values = [['Visit date', input.visitDate], ['Items purchased', input.itemsPurchased === undefined ? 'Unknown' : String(input.itemsPurchased)], ['Whole-haul potential', input.haulPotential === undefined ? 'Not assessed' : String(input.haulPotential)], ['Stock colour', input.stockColour ?? ''], ['Colour meaning', input.colourEvidence ?? 'unknown'], ['Observations', input.observations], ['Useful finds', input.finds], ['Remember next time', input.nextTime], ['Update last visited', input.updateLastVisited ? 'Yes' : 'No'], ['Source rating update', input.rating === undefined ? 'No change' : String(input.rating)], ['Source takeaway update', input.comments ?? 'No change']];
-    const copy = section.createEl('textarea', { attr: { 'aria-label': 'Entered visit details to copy before closing' } }); copy.rows = 8; copy.readOnly = true; copy.value = values.map(([label, value]) => label + ': ' + value).join('\n\n'); copy.style.userSelect = 'text';
+    const copy = section.createEl('textarea', { cls: 'charity-copy-conflict', attr: { 'aria-label': 'Entered visit details to copy before closing' } }); copy.rows = 8; copy.readOnly = true; copy.value = values.map(([label, value]) => label + ': ' + value).join('\n\n');
     const close = section.createEl('button', { text: 'Close without saving this form' }); close.onclick = () => { this.changed = false; this.completed = true; this.close(); };
   }
   private flush(): Promise<void> {
-    window.clearTimeout(this.timer);
+    modalWindow(this).clearTimeout(this.timer);
     if (!this.changed || this.completed || !this.fields) return this.queue;
     const snapshot = this.fields.snapshot(), signature = JSON.stringify(snapshot);
     const run = async () => {
@@ -325,7 +326,7 @@ export class StructuredVisitModal extends Modal {
   }
   private async discard(): Promise<void> {
     if (this.saving || this.closed) return;
-    this.setSaving(true); window.clearTimeout(this.timer);
+    this.setSaving(true); modalWindow(this).clearTimeout(this.timer);
     try {
       await this.queue.catch(() => undefined);
       await this.context.store.visits.clearDraft(this.sourcePath, this.visitPath, this.draftRevision);
@@ -347,14 +348,14 @@ export class StructuredVisitModal extends Modal {
   }
   onClose(): void {
     this.closed = true; this.contentEl.ownerDocument?.removeEventListener('visibilitychange', this.background);
-    this.fields?.dispose?.(); window.clearTimeout(this.timer); this.contentEl.empty();
+    this.fields?.dispose?.(); modalWindow(this).clearTimeout(this.timer); this.contentEl.empty();
     if (!this.saving) void this.flush().catch(error => this.draftFailure(error)).finally(() => this.release());
   }
 }
 
 export function renderVisitRecordDetails(el: HTMLElement, visit: VisitRecord): void {
   for (const [label, value] of [['Observations', visit.observations], ['Useful finds', visit.finds], ['Remember next time', visit.nextTime]]) if (value) {
-    el.createEl('strong', { text: label! }); el.createEl('p', { text: value!, cls: 'charity-visit-text' });
+    el.createEl('strong', { text: label }); el.createEl('p', { text: value, cls: 'charity-visit-text' });
   }
   el.createEl('p', { text: 'Recorded ' + visit.recordedAt + (visit.updatedAt !== visit.recordedAt ? ' · edited ' + visit.updatedAt : ''), cls: 'charity-hint' });
 }

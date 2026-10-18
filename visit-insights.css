@@ -1,14 +1,88 @@
-.charity-insights-modal { width: min(96vw, 78rem); }
-.charity-insights { min-width: 0; }
-.charity-insight-filters { display: flex; flex-wrap: wrap; align-items: end; gap: var(--size-4-2); margin-block: var(--size-4-3); }
-.charity-insight-filters > input { flex: 1 1 14rem; min-width: 0; }
-.charity-insight-date { display: flex; flex-direction: column; gap: var(--size-2-2); max-width: 100%; }
-.charity-insight-table { max-width: 100%; overflow-x: auto; margin-block: var(--size-4-3); }
-.charity-insight-table table { width: 100%; min-width: 42rem; border-collapse: collapse; }
-.charity-insight-table th,.charity-insight-table td { padding: var(--size-4-2); text-align: start; vertical-align: top; border: 1px solid var(--background-modifier-border); overflow-wrap: normal; word-break: normal; }
-.charity-insight-table th { background: var(--background-secondary); }
-.charity-insight-table .charity-actions { min-width: 8rem; }
-.charity-insights button,.charity-insights input:not([type=checkbox]) { min-height: 44px; }
-.charity-insight-toggle { display: flex; align-items: center; gap: var(--size-4-2); min-height: 44px; }
-.charity-insight-toggle input { flex-shrink: 0; }
-.charity-insight-results { min-width: 0; }
+.charity-insights-modal {
+  width: min(96vw, 78rem);
+}
+
+.charity-insights {
+  min-width: 0;
+}
+
+.charity-insight-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--size-4-2);
+  margin-block: var(--size-4-3);
+}
+
+.charity-insight-filters > input {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.charity-insight-date {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-2);
+  max-width: 100%;
+}
+
+.charity-insight-table {
+  max-width: 100%;
+  overflow-x: auto;
+  margin-block: var(--size-4-3);
+}
+
+.charity-insight-table table {
+  width: 100%;
+  min-width: 42rem;
+  border-collapse: collapse;
+}
+
+.charity-insight-table th {
+  padding: var(--size-4-2);
+  text-align: start;
+  vertical-align: top;
+  border: 1px solid var(--background-modifier-border);
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.charity-insight-table td {
+  padding: var(--size-4-2);
+  text-align: start;
+  vertical-align: top;
+  border: 1px solid var(--background-modifier-border);
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.charity-insight-table th {
+  background: var(--background-secondary);
+}
+
+.charity-insight-table .charity-actions {
+  min-width: 8rem;
+}
+
+.charity-insights button {
+  min-height: 44px;
+}
+
+.charity-insight-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  min-height: 44px;
+}
+
+.charity-insight-toggle input {
+  flex-shrink: 0;
+}
+
+.charity-insight-results {
+  min-width: 0;
+}
+
+.charity-insights input:not([type="checkbox"]) {
+  min-height: 44px;
+}

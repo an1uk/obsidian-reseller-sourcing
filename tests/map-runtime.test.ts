@@ -49,6 +49,20 @@ test('upstream style adapter retains free light/dark styles and custom raster or
   assert.equal(raster.layers[0].type,'raster');
 });
 
+test('malformed remote map style data is not treated as a typed background', async () => {
+  const m=await loadModule(`export { StyleManager } from './src/map/style';`);
+  const style=new m.StyleManager({isDarkMode:()=>false});
+  for (const json of [null, [], {version:8,sources:[],layers:[]}, {version:8,sources:{},layers:[{id:'bad'}]}, {version:8,sources:{bad:{type:'unknown'}},layers:[]}]) {
+    (globalThis as any).__mapRequest=async()=>({status:200,json});
+    assert.equal(await style.getMapStyle(['https://example.test/background.json'],[]),'https://example.test/background.json');
+  }
+});
+
+test('map worker setup uses MapLibre built-in RTL support without requesting an obsolete plugin', async () => {
+  const m=await loadModule(`export { initializeMapRuntime, shutdownMapRuntime } from './src/map/runtime';`);
+  m.initializeMapRuntime();m.initializeMapRuntime();m.shutdownMapRuntime();m.initializeMapRuntime();m.shutdownMapRuntime();
+});
+
 test('native Bases coordinate adapter accepts exact numbers and rejects partial or extra coordinates', async () => {
   const m=await loadModule(`export * from './src/map/utils'; export {StringValue,NumberValue,ListValue} from 'obsidian';`);
   assert.deepEqual(m.coordinateFromValue(new m.ListValue([new m.NumberValue(12.3),new m.StringValue('45.6')])),[12.3,45.6]);
@@ -65,7 +79,7 @@ test('unloading while remote style is pending prevents late map creation; concur
   let release:(value:unknown)=>void=()=>{}; let requests=0;
   (globalThis as any).__mapInstances=0; (globalThis as any).__mapRemoved=0;
   (globalThis as any).__mapRequest=()=>{requests++;return new Promise(resolve=>{release=resolve})};
-  const element=()=>({createDiv:()=>element(),parentElement:null,style:{},querySelector:()=>null,setText(){},remove(){},removeClass(){},addClass(){}});
+  const element=()=>({createDiv:()=>element(),parentElement:null,style:{removeProperty(){},setProperty(){}},querySelector:()=>null,setText(){},remove(){},removeClass(){},addClass(){},toggleClass(){}});
   const app={isDarkMode:()=>false,workspace:{openLinkText(){}}};
   const config={get:()=>null,getAsPropertyId:()=>null,getEvaluatedFormula:()=>null};
   const view=new m.MapView({app,config},element(),{app,settings:{root:'Charity Sourcing',tileSets:[]}});

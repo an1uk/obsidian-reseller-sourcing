@@ -1,0 +1,84 @@
+name: Verify and release
+
+on:
+  push:
+    branches: [main]
+    tags: ['*.*.*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.3'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run check
+      - run: npm run package
+      - run: npm test
+      - run: node scripts/prepare-release.mjs
+        env:
+          EXPECTED_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        with:
+          name: release-assets
+          path: dist/publish/*
+          if-no-files-found: error
+          retention-days: 30
+
+  attest:
+    if: github.event_name == 'push' && github.ref_type == 'tag' && github.repository == 'an1uk/obsidian-reseller-sourcing'
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-assets
+          path: release-assets
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: release-assets/*
+
+  publish:
+    if: github.event_name == 'push' && github.ref_type == 'tag' && github.repository == 'an1uk/obsidian-reseller-sourcing'
+    needs: [verify, attest]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Verify provenance of every download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          for file in release-assets/*; do
+            gh attestation verify "$file" --repo "$REPOSITORY" --signer-workflow "$REPOSITORY/.github/workflows/verify-release.yml" --source-digest "$COMMIT"
+          done
+      - name: Publish standard release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION_TAG: ${{ github.ref_name }}
+        run: gh release create "$VERSION_TAG" release-assets/* --verify-tag --title "Reseller sourcing $VERSION_TAG" --notes-file RELEASE-NOTES.md --latest

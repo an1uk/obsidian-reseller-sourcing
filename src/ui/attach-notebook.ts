@@ -1,3 +1,4 @@
+import { markInputModal } from './modal-layout';
 import { Modal, Setting } from 'obsidian';
 import type { NotebookContext } from '../notebook-context';
 import type { AttachmentPreview } from '../storage/attachment';
@@ -7,7 +8,7 @@ export class AttachNotebookModal extends Modal {
   private finishEditing?: () => void;
   private closed = false;
   constructor(private plugin: NotebookContext) { super(plugin.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     if (this.plugin.kind === 'examples') { this.titleEl.setText('Examples reference'); renderExamplesReference(this.plugin, this.contentEl, 'Use existing notebook attaches your real notebook on another device. Practice attaching is described in Reference.'); return; }
     if (!(this.finishEditing = this.plugin.beginEditing())) { this.close(); return; }
     this.titleEl.setText('Use existing notebook'); this.modalEl.addClass('charity-attach-modal');

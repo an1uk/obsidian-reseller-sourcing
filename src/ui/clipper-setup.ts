@@ -1,3 +1,4 @@
+import { markInputModal } from './modal-layout';
 import { Modal, Notice, Platform, Setting } from 'obsidian';
 import type { NotebookContext } from '../notebook-context';
 import type { ClipperStatus, ClipperTemplateStatus } from '../storage/store';
@@ -11,7 +12,7 @@ export class ClipperSetupModal extends Modal {
   private closed = false;
   private importChoices = new Set<string>();
   constructor(private plugin: NotebookContext) { super(plugin.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     if (this.plugin.kind === 'examples') { this.titleEl.setText('Examples reference'); renderExamplesReference(this.plugin, this.contentEl, 'Review the prepared practice captures here. Real browser-template import instructions are available in Reference.'); return; }
     if (Platform.isMobileApp) { this.renderMobileHelp(); return; }
     if (!(this.finishEditing = this.plugin.beginEditing())) { this.close(); return; }
@@ -25,8 +26,8 @@ export class ClipperSetupModal extends Modal {
     this.contentEl.createEl('p', { text: 'Browser clipping is configured on desktop in this version. Sync the completed source notes to use them on Android. You can create sources and parking, add visits and plan outings here.' });
     this.contentEl.createEl('p', { text: 'No Android browser extraction or import confirmation is required.', cls: 'charity-hint' });
     const path = this.plugin.store.paths.templates + '/Web Clipper';
-    const field = this.contentEl.createEl('textarea', { attr: { readonly: 'true', 'aria-label': 'Templates folder in this vault' } });
-    field.value = path; field.rows = 2; field.style.width = '100%';
+    const field = this.contentEl.createEl('textarea', { cls: 'charity-selectable-text', attr: { readonly: 'true', 'aria-label': 'Templates folder in this vault' } });
+    field.value = path; field.rows = 2;
     button(this.contentEl, 'Copy template folder path', () => copyTextOrShow(this.plugin.app, path, 'Templates folder in this vault'));
     button(this.contentEl, 'Show selectable path', () => showSelectableText(this.plugin.app, path, 'Templates folder in this vault'));
   }
@@ -46,7 +47,7 @@ export class ClipperSetupModal extends Modal {
     const el = this.contentEl; el.empty();
     el.createEl('p', { text: 'Optional browser capture for ' + this.plugin.store.root + '. Available template release: v' + status.release + '.', cls: 'charity-hint' });
     el.createEl('p', { text: 'Copy JSON or use the template files, import them in Web Clipper, then confirm each version below.' });
-    if (status.templates.some(t => t.exportState === 'edited')) el.createEl('p', { text: 'Some exported JSON files have edits and were preserved. Use Copy JSON below for the current supplied templates.', cls: 'charity-hint' });
+    if (status.templates.some(t => t.exportState === 'edited')) el.createEl('p', { text: 'Some exported JSON files have edits and were preserved. Use the JSON copy actions below for the current supplied templates.', cls: 'charity-hint' });
     external(this.plugin, el, 'Install Obsidian Web Clipper', 'https://obsidian.md/clipper');
     if (Platform.isDesktopApp && Platform.isWin) {
       const launch = el.createDiv('charity-actions');
@@ -66,15 +67,15 @@ export class ClipperSetupModal extends Modal {
     instructions.createEl('summary', { text: 'Import steps and older versions' });
     instructions.createEl('p', { text: 'Obsidian cannot replace browser templates or check which versions the browser has.' });
     const steps = instructions.createEl('ol');
-    steps.createEl('li', { text: 'Copy Source JSON or Parking JSON below.' });
-    steps.createEl('li', { text: 'In Web Clipper, open the Settings cog, select any template, choose Import, paste the JSON and choose Import again.' });
+    steps.createEl('li', { text: 'Copy source JSON or parking JSON below.' });
+    steps.createEl('li', { text: 'In Web Clipper, open the settings cog, select any template, choose import, paste the JSON and choose import again.' });
     steps.createEl('li', { text: 'Check that the imported name matches the version below. Test it on a place listing, then delete older copies or move them below the new version.' });
-    instructions.createEl('p', { text: 'Import creates another template. The first matching template in Clipper is used. Templates without a visible version are older than these exports.', cls: 'charity-hint' });
+    instructions.createEl('p', { text: 'Import creates another template. The first matching browser template is used. Templates without a visible version are older than these exports.', cls: 'charity-hint' });
     const more = el.createEl('details', { cls: 'charity-details' });
     more.createEl('summary', { text: 'Import JSON files instead' });
     more.createEl('p', { text: 'In the same Import dialog, select or drop Capture source.json and Capture parking.json. You can select both files together. Use template Import, not Import all settings.' });
     const changed = status.templates.filter(t => t.exportState !== 'current');
-    if (changed.length) more.createEl('p', { text: 'Some exported files have edits and were kept. Use Copy JSON above for the current supplied templates.', cls: 'charity-hint' });
+    if (changed.length) more.createEl('p', { text: 'Some exported files have edits and were kept. Use the JSON copy actions above for the current supplied templates.', cls: 'charity-hint' });
     button(more, 'Show template files', () => this.plugin.revealTemplates());
     if (Platform.isDesktopApp && Platform.isWin) button(more, 'Copy Chrome settings address', async () => { if (await copyTextOrShow(this.plugin.app, CHROME_CLIPPER_SETTINGS_URL, 'Chrome settings address')) new Notice('Chrome settings address copied. Paste it into Chrome.'); });
     external(this.plugin, more, 'Web Clipper import help', 'https://obsidian.md/help/web-clipper/templates');
@@ -98,7 +99,7 @@ export class ClipperSetupModal extends Modal {
     const status = section.createDiv({ attr: { role: 'status', 'aria-live': 'polite' } });
     button(actions, 'Copy ' + label + ' JSON', async () => {
       try { const copied = await copyTextOrShow(this.plugin.app, template.json, label + ' template JSON'); status.setText(copied ? label + ' JSON copied. Paste it into the template Import dialog in Web Clipper.' : 'Select and copy the JSON in the opened dialog.'); }
-      catch { status.setText('Could not copy. Use Show template files and import the JSON file instead.'); status.addClass('charity-error'); }
+      catch { status.setText('Could not copy. Show the template files and import the JSON file instead.'); status.addClass('charity-error'); }
     }, !template.confirmedAt && !(Platform.isDesktopApp && Platform.isWin));
     if (template.exportState === 'current') button(actions, 'Show ' + label + ' file', () => this.plugin.revealTemplates(template.kind));
     if (!template.confirmedAt) {
@@ -129,8 +130,8 @@ export async function showClipperUpdateNotice(plugin: NotebookContext): Promise<
   const status = await plugin.store.getClipperStatus();
   const pending = status.templates.some(t => !t.confirmedAt);
   if (!pending || plugin.settings.clipperNoticeFingerprint === status.fingerprint) return;
-  const fragment = document.createDocumentFragment();
-  fragment.createEl('span', { text: 'Web Clipper templates v' + status.release + ' are ready. Import or update them for this notebook. ' });
+  const fragment = createFragment();
+  fragment.createSpan({ text: 'Web Clipper templates v' + status.release + ' are ready. Import or update them for this notebook. ' });
   const open = fragment.createEl('button', { text: 'Open import guide' });
   open.onclick = () => { notice.hide(); plugin.openClipperSetup(); };
   const notice = new Notice(fragment, 15000);

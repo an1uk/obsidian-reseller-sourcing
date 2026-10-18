@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { transformSync } from 'esbuild';
+import * as guards from '../src/domain/guards';
 
 function contextHarness() {
   class File { constructor(public path: string) {} }
@@ -20,7 +21,7 @@ function contextHarness() {
   const source = fs.readFileSync(new URL('../src/examples/context.ts', import.meta.url), 'utf8');
   vm.runInNewContext(transformSync(source, { loader: 'ts', format: 'cjs', target: 'es2022' }).code, {
     module, exports: module.exports,
-    require(id: string) { return id === '../workspace/view' ? {routeForPath: () => undefined} : id === 'obsidian' ? { TFile: File, Notice: class {} } : {}; },
+    require(id: string) { return id === '../domain/guards' ? guards : id === '../workspace/view' ? {routeForPath: () => undefined} : id === 'obsidian' ? { TFile: File, Notice: class {} } : {}; },
   });
   const host = { app, manifest: { version: 'test' }, basesReady: true };
   const session = { root: 'Notebook/Examples', settings: { root: 'Notebook/Examples' }, store: {},

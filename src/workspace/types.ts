@@ -17,7 +17,9 @@ export interface OutingPreparation {
   existingPath?: string; existingRevision?: string;
 }
 export interface PlacePreparation { capture: CaptureDraft; area: AreaSelection; step: 1 | 2; linkedSource?: string; filename: string; coordinatesText?: string; makeDefaultSourceType?: boolean; }
-export interface PreparationDraft<T = OutingPreparation | PlacePreparation> {
-  schema: 1; id: string; kind: 'outing' | 'place'; root: string; updatedAt: string; deferred: boolean;
+interface PreparationEnvelope<T, K extends 'outing' | 'place'> {
+  schema: 1; id: string; kind: K; root: string; updatedAt: string; deferred: boolean;
   phase: 'editing' | 'completing' | 'complete' | 'discarded'; data: T; revision: string; resultPath?: string;
 }
+export type PreparationDraft<T = OutingPreparation | PlacePreparation> =
+  T extends OutingPreparation ? PreparationEnvelope<T, 'outing'> : T extends PlacePreparation ? PreparationEnvelope<T, 'place'> : never;

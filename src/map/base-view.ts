@@ -98,7 +98,7 @@ export class MapView extends BasesView {
 			this.app,
 			this.mapEl,
 			this.popupManager,
-			(path, newLeaf) => void this.app.workspace.openLinkText(path, '', newLeaf),
+			(path, newLeaf) => { runMapAction(() => this.app.workspace.openLinkText(path, '', newLeaf)); },
 			() => this.mapData(),
 			() => this.mapConfig,
 			(prop) => this.config.getDisplayName(prop)
@@ -161,13 +161,20 @@ export class MapView extends BasesView {
 
 	private async updateMapStyle(): Promise<void> {
 		if (!this.map || !this.mapConfig) return;
-		const newStyle = await this.styleManager.getMapStyle(this.mapConfig.mapTiles, this.mapConfig.mapTilesDark);
-		if (!this.map || this.disposed) return;
-		this.map.setStyle(newStyle);
-		this.markerManager.clearLoadedIcons();
+		const map = this.map;
+		try {
+			const newStyle = await this.styleManager.getMapStyle(this.mapConfig.mapTiles, this.mapConfig.mapTilesDark);
+			if (this.map !== map || this.disposed) return;
+			map.setStyle(newStyle);
+			this.markerManager.clearLoadedIcons();
 
-		// Style listeners flush this only once the replacement style is ready.
-		this.markersPending = true;
+			// Style listeners flush this only once the replacement style is ready.
+			this.markersPending = true;
+		} catch (error) {
+			if (this.map !== map || this.disposed) return;
+			console.warn('Reseller sourcing map background:', error);
+			this.showMapFailure();
+		}
 	}
 
 	private async switchToTileSet(tileSetId: string): Promise<void> {
@@ -601,9 +608,10 @@ export class MapView extends BasesView {
 
 	/** Embedded views size to the configured height; direct views let CSS drive it. */
 	private applyMapHeight(): void {
-		this.mapEl.style.height = this.isEmbedded() && this.mapConfig
-			? `min(${this.mapConfig.mapHeight}px, 80vh)`
-			: '';
+		const embedded = this.isEmbedded();
+		this.mapEl.toggleClass('charity-map-embedded', embedded);
+		if (embedded && this.mapConfig) this.mapEl.style.setProperty('--charity-map-embed-height', `min(${this.mapConfig.mapHeight}px, 80vh)`);
+		else this.mapEl.style.removeProperty('--charity-map-embed-height');
 	}
 
 	private loadConfig(currentTileSetId: string | null): MapConfig {

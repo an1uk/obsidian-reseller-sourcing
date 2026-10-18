@@ -1,192 +1,370 @@
 /* Adapted from Obsidian Maps 0.2.2, MIT. See licenses/UPSTREAM.md. */
-.charity-map-container, .charity-map {
-	--charity-map-embed-height: 400px;
-	--charity-map-marker-background: var(--interactive-accent);
-	--charity-map-marker-icon-color: white;
-	--charity-map-blend-mode: normal;
-}
-
-.bases-view[data-view-type="charity-sourcing-map"] {
-	--bases-embed-border-width: 0px;
-	--bases-view-padding: 0;
-	position: relative;
-}
-
-.workspace-leaf-content[data-type="bases"] {
-	.charity-map {
-		height: 100%;
-	}
-}
-
 .charity-map-container {
-	position: relative;
-	width: 100%;
-	height: 100%;
-	overflow: hidden;
+  --charity-map-embed-height: 400px;
+  --charity-map-marker-background: var(--interactive-accent);
+  --charity-map-marker-icon-color: #fff;
+  --charity-map-blend-mode: normal;
 }
 
 .charity-map {
-	width: 100%;
-	background-color: var(--background-primary);
-	height: var(--charity-map-embed-height);
-	overflow: hidden;
-	position: relative;
-	-webkit-tap-highlight-color: rgb(0, 0, 0, 0);
+  --charity-map-embed-height: 400px;
+  --charity-map-marker-background: var(--interactive-accent);
+  --charity-map-marker-icon-color: #fff;
+  --charity-map-blend-mode: normal;
+}
 
-	canvas {
-		mix-blend-mode: var(--charity-map-blend-mode);
+.bases-view[data-view-type="charity-sourcing-map"] {
+  --bases-embed-border-width: 0px;
+  --bases-view-padding: 0;
 
-		&.is-over-marker {
-			cursor: pointer;
-		}
-	}
+  position: relative;
+}
 
-	&.is-loading {
-		display: flex;
-		align-items: center;
-		justify-content: center;
+.charity-map-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
 
-		&::before {
-			color: var(--text-muted);
-		}
-	}
+.charity-map {
+  width: 100%;
+  background-color: var(--background-primary);
+  height: var(--charity-map-embed-height);
+  overflow: hidden;
+  position: relative;
+  -webkit-tap-highlight-color: rgb(0 0 0 / 0%);
+
+  canvas {
+    mix-blend-mode: var(--charity-map-blend-mode);
+
+    &.is-over-marker {
+      cursor: pointer;
+    }
+  }
+
+  &.is-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &::before {
+      color: var(--text-muted);
+    }
+  }
+}
+
+.workspace-leaf-content[data-type="bases"] {
+  .charity-map {
+    height: 100%;
+  }
 }
 
 /* Offscreen probe used to resolve CSS colour variables to concrete values */
 .charity-map-color-probe {
-	display: none;
-}
-
-.charity-map-popup {
-	min-width: 200px;
-	max-width: 300px;
-
-	.charity-map-popup-title {
-		--link-weight: calc(var(--font-weight) + var(--bold-modifier));
-		font-size: var(--font-ui-medium);
-		padding: var(--size-4-2);
-
-		a {
-			color: var(--text-normal);
-			text-decoration: none;
-
-			&:hover {
-				color: var(--text-accent);
-			}
-		}
-	}
-
-	.charity-map-popup-properties {
-		display: flex;
-		flex-direction: column;
-		gap: var(--size-4-2);
-	}
+  display: none;
 }
 
 .charity-map-popup-property {
-	font-size: var(--font-ui-small);
-	&:last-child {
-		padding-bottom: var(--size-4-2);
-	}
+  font-size: var(--font-ui-small);
+
+  &:last-child {
+    padding-bottom: var(--size-4-2);
+  }
 }
 
 .charity-map-popup-property-label {
-	font-size: var(--font-ui-smaller);
-	color: var(--text-muted);
-	padding: 0 var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  padding: 0 var(--size-4-2);
 }
 
 .charity-map-popup-property-value {
-	color: var(--text-normal);
-	word-break: break-word;
-	padding: 0 var(--size-4-2);
+  color: var(--text-normal);
+  overflow-wrap: anywhere;
+  padding: 0 var(--size-4-2);
 }
 
 .charity-map-container .maplibregl-popup-content {
-  background: var(--background-primary); color: var(--text-normal);
-  border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
 }
-.charity-map-container .maplibregl-ctrl-attrib {
-  background: var(--background-primary); color: var(--text-muted); font-size: 10px;
-}
-.charity-map-container .maplibregl-ctrl-attrib a { color: var(--text-muted); }
-.charity-map-container .user-location-marker circle {fill:var(--interactive-accent);stroke:var(--background-primary);stroke-width:2;}
-.charity-map-container .canvas-control-group {display:flex;flex-direction:column;background:var(--background-primary);border-radius:var(--radius-s);}
-.charity-map-container .canvas-control-item {padding:8px;min-height:32px;min-width:32px;cursor:pointer;}
-.charity-map-actions {position:absolute;left:8px;top:8px;z-index:3;display:flex;gap:4px;flex-wrap:wrap;max-width:calc(100% - 60px);}
-.charity-map-actions button {font-size:var(--font-ui-small);background:var(--background-primary);box-shadow:var(--shadow-s);height:auto;min-height:32px;white-space:normal;}
-.charity-map-message:not(:empty) {position:absolute;z-index:3;left:8px;right:8px;bottom:30px;background:var(--background-primary);padding:8px;border-radius:6px;font-size:var(--font-ui-small);box-shadow:var(--shadow-s);}
-.charity-map-picking .maplibregl-canvas-container, .charity-map-picking canvas {cursor:crosshair !important;}
-.charity-place-map {height:auto;}
-.charity-place-marker {display:flex;align-items:center;gap:3px;padding:5px;height:32px;min-width:32px;border:2px solid white;border-radius:16px;background:var(--charity-marker-colour)!important;color:white!important;box-shadow:0 1px 5px #0008;}
-.charity-place-marker svg {width:18px;height:18px;}
-.charity-marker-score {font-size:12px;font-weight:700;}
-.charity-popup-title {white-space:normal;height:auto;font-weight:600;width:100%;}
-.charity-map-popup p {margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere;}
-.charity-popup-links {display:flex;gap:10px;flex-wrap:wrap;margin:8px 0;}
-.charity-map-popup details a {display:block;margin:6px 0;}
-.is-mobile .charity-map-actions button {min-height:44px;}
-.is-mobile .charity-map-container .canvas-control-item {min-height:44px;min-width:44px;}
 
+.charity-map-container .maplibregl-ctrl-attrib {
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.charity-map-container .user-location-marker circle {
+  fill:var(--interactive-accent);
+  stroke:var(--background-primary);
+  stroke-width:2;
+}
+
+.charity-map-container .canvas-control-group {
+  display:flex;
+  flex-direction:column;
+  background:var(--background-primary);
+  border-radius:var(--radius-s);
+}
+
+.charity-map-container .canvas-control-item {
+  padding:8px;
+  min-height:32px;
+  min-width:32px;
+  cursor:pointer;
+}
+
+.charity-map-actions {
+  position:absolute;
+  left:8px;
+  top:8px;
+  z-index:3;
+  display:flex;
+  gap:4px;
+  flex-wrap:wrap;
+  max-width:calc(100% - 60px);
+}
+
+.charity-map-actions button {
+  font-size:var(--font-ui-small);
+  background:var(--background-primary);
+  box-shadow:var(--shadow-s);
+  height:auto;
+  min-height:32px;
+  white-space:normal;
+}
+
+.charity-map-message:not(:empty) {
+  position:absolute;
+  z-index:3;
+  left:8px;
+  right:8px;
+  bottom:30px;
+  background:var(--background-primary);
+  padding:8px;
+  border-radius:6px;
+  font-size:var(--font-ui-small);
+  box-shadow:var(--shadow-s);
+}
+
+.charity-map-container .charity-map-picking .maplibregl-canvas-container {
+  cursor:crosshair;
+}
+
+.charity-map-container .charity-map-picking canvas {
+  cursor:crosshair;
+}
+
+.charity-place-map {
+  height:auto;
+
+  --charity-map-place-height:min(400px,80vh);
+}
+
+.charity-place-map.charity-locality-map {
+  --charity-map-place-height:min(680px,80vh);
+}
+
+.charity-map-container .charity-map.charity-place-map-canvas {
+  height:var(--charity-map-place-height);
+}
+
+.charity-map-container .charity-map.charity-map-embedded {
+  height:var(--charity-map-embed-height);
+}
+
+.charity-map-container button.charity-place-marker {
+  display:flex;
+  align-items:center;
+  gap:3px;
+  padding:5px;
+  height:32px;
+  min-width:32px;
+  border:2px solid #fff;
+  border-radius:16px;
+  background:var(--charity-marker-colour);
+  color:#fff;
+  box-shadow:0 1px 5px #0008;
+}
+
+.charity-place-marker svg {
+  width:18px;
+  height:18px;
+}
+
+.charity-marker-score {
+  font-size:12px;
+  font-weight:700;
+}
+
+.charity-popup-title {
+  white-space:normal;
+  height:auto;
+  font-weight:600;
+  width:100%;
+}
+
+.charity-map-popup p {
+  margin:8px 0;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+}
+
+.charity-popup-links {
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin:8px 0;
+}
+
+.charity-map-popup details a {
+  display:block;
+  margin:6px 0;
+}
+
+.charity-map-container .maplibregl-ctrl-attrib a {
+  color: var(--text-muted);
+}
+
+.charity-map-popup {
+  min-width: 200px;
+  max-width: 300px;
+
+  .charity-map-popup-title {
+    --link-weight: calc(var(--font-weight) + var(--bold-modifier));
+
+    font-size: var(--font-ui-medium);
+    padding: var(--size-4-2);
+
+    a {
+      color: var(--text-normal);
+      text-decoration: none;
+
+      &:hover {
+        color: var(--text-accent);
+      }
+    }
+  }
+
+  .charity-map-popup-properties {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-2);
+  }
+}
+
+.is-mobile .charity-map-actions button {
+  min-height:44px;
+}
 
 /* Touch controls for the same map renderer on mobile. */
-.charity-map-mobile .canvas-control-item,
-.charity-map-mobile .maplibregl-ctrl button,
+.charity-map-mobile .canvas-control-item {
+  min-height:44px;
+  min-width:44px;
+}
+
+.is-mobile .charity-map-container .canvas-control-item {
+  min-height:44px;
+  min-width:44px;
+}
+
+.charity-map-mobile .maplibregl-ctrl button {
+  min-height:44px;
+  min-width:44px;
+}
+
 .charity-map-mobile .charity-map-actions button {
   min-height:44px;
   min-width:44px;
 }
-.charity-map-mobile .charity-place-marker {
+
+.charity-map-container.charity-map-mobile button.charity-place-marker {
   height:44px;
   min-width:44px;
   border-radius:22px;
 }
+
 .charity-map-mobile .maplibregl-popup-close-button {
   min-width:44px;
   min-height:44px;
   font-size:var(--font-ui-large);
 }
-.charity-map-mobile .charity-map-popup button,
-.charity-map-mobile .charity-map-popup a,
+
+.charity-map-mobile .charity-map-popup button {
+  min-height:44px;
+  display:inline-flex;
+  align-items:center;
+  white-space:normal;
+}
+
+.charity-map-mobile .charity-map-popup a {
+  min-height:44px;
+  display:inline-flex;
+  align-items:center;
+  white-space:normal;
+}
+
 .charity-map-mobile .charity-popup-links a {
   min-height:44px;
   display:inline-flex;
   align-items:center;
   white-space:normal;
 }
-.charity-map-mobile .charity-map-popup,
+
+.charity-map-mobile .charity-map-popup {
+  max-width:min(300px, calc(100vw - 32px));
+  overflow-wrap:anywhere;
+}
+
 .charity-map-mobile .maplibregl-popup-content {
   max-width:min(300px, calc(100vw - 32px));
   overflow-wrap:anywhere;
 }
 
-.charity-map-mobile .charity-map-popup summary { min-height:44px; padding-block:8px; box-sizing:border-box; }
-.charity-map-mobile .charity-map-popup-title, .charity-map-mobile .charity-popup-title { padding-inline-end:44px; }
+.charity-map-mobile .charity-map-popup summary {
+  min-height:44px;
+  padding-block:8px;
+  box-sizing:border-box;
+}
 
-/* A touch popup must fit even when neither side of its pin has enough room. */
-.charity-map-mobile .maplibregl-popup {
+/* This bounded sheet belongs to the map, without MapLibre's inline transforms. */
+.charity-map-touch-popup {
+  position:absolute;
   inset:16px 16px 28px;
-  max-width:none !important;
-  transform:none !important;
   z-index:4;
-}
-.charity-map-mobile .maplibregl-popup-tip { display:none; }
-.charity-map-mobile .maplibregl-popup-content {
-  flex:1;
-  min-height:0;
-  max-width:none;
   display:flex;
+  flex-direction:column;
+  gap:var(--size-4-2);
+  padding:var(--size-4-3);
+  min-height:0;
   overflow:hidden;
+  background:var(--background-primary);
+  color:var(--text-normal);
+  border:1px solid var(--background-modifier-border);
+  border-radius:var(--radius-m);
+  box-shadow:var(--shadow-s);
 }
-.charity-map-mobile .maplibregl-popup-content > .charity-map-popup {
-  flex:1;
+
+.charity-map-touch-popup > .charity-map-touch-popup-close {
+  align-self:flex-end;
+  flex-shrink:0;
+  min-width:44px;
+  min-height:44px;
+}
+
+.charity-map-touch-popup > .charity-map-popup {
   min-width:0;
   max-width:none;
   overflow-y:auto;
   overscroll-behavior:contain;
   padding-inline-end:4px;
 }
-.charity-map-mobile .maplibregl-popup-close-button {
-  z-index:1;
-  background:var(--background-primary);
+
+.charity-map-touch-popup :is(button,a,summary):focus-visible {
+  outline:2px solid var(--interactive-accent);
+  outline-offset:2px;
 }

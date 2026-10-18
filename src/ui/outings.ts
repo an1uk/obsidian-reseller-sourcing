@@ -1,12 +1,13 @@
+import { markInputModal, modalWindow } from './modal-layout';
 import { Component, Modal, Notice, Setting, TFile } from 'obsidian';
 import type { NotebookContext } from '../notebook-context';
 import type { PlaceRecord } from '../types';
-import type { OutingGroup, OutingRecord, OutingStop, OutingVisitInput, OutingPlanningOptions } from '../outings/types';
-import { proposeOutingGroups, suggestOutingOrder, suggestWalkingOrder, extractSourceContext } from '../outings/domain';
-import { formatRating, googleMapsUrl, navigationUrl, resolveParking } from '../domain';
+import type { OutingGroup, OutingRecord, OutingStop, OutingVisitInput } from '../outings/types';
+import { extractSourceContext } from '../outings/domain';
+import { formatRating, googleMapsUrl, navigationUrl } from '../domain';
 import { localDate } from '../storage/markdown';
 import { mountPlaceMap } from '../map';
-import { button, details, errorText, external, renderContextBanner } from '../ui';
+import { button, details, errorText, external, renderContextBanner, propertyText } from '../ui';
 import { OutingRouteModal } from './outing-route';
 import { OutingPlannerModal } from './outing-planner';
 import { StructuredVisitModal, renderVisitFields, visitDateSuggestion, visitInputFromRecord, visitSummary, renderVisitRecordDetails, type VisitEditor } from './visits';
@@ -27,227 +28,6 @@ async function editing<T>(plugin: NotebookContext, run: () => Promise<T>): Promi
   const finish = plugin.beginEditing(); if (!finish) return;
   try { return await run(); } finally { finish(); }
 }
-function move<T>(values: T[], index: number, direction: number): void {
-  const target = index + direction;
-  if (target < 0 || target >= values.length) return;
-  [values[index], values[target]] = [values[target]!, values[index]!];
-}
-function warningList(el: HTMLElement, warnings: string[]): void {
-  if (!warnings.length) return;
-  const list = el.createEl('ul', { cls: 'charity-hint' });
-  for (const warning of warnings) list.createEl('li', { text: warning });
-}
-function stopLabel(stop: OutingStop, places: PlaceRecord[]): string {
-  return placeName(stop.sourcePath, places) + (stop.status === 'pending' ? '' : ' · ' + stop.status);
-}
-
-class LegacyOutingModal extends Modal {
-  private places: PlaceRecord[] = [];
-  private groups: OutingGroup[] = [];
-  private record?: OutingRecord;
-  private planning?: OutingPlanningOptions;
-  private name = 'Sourcing ' + localDate();
-  private unresolved = new Set<string>();
-  private finishEditing?: () => void;
-  private closed = false;
-  private selectedEl!: HTMLElement;
-  private candidateEl!: HTMLElement;
-  private previewEl!: HTMLElement;
-  private candidateFilter = { text: '', area: '', type: '' };
-  constructor(private plugin: NotebookContext, private existingPath?: string) { super(plugin.app); }
-  onOpen(): void {
-    if (!(this.finishEditing = this.plugin.beginEditing())) { this.close(); return; }
-    this.modalEl.addClass('charity-outing-modal'); this.titleEl.setText(this.existingPath ? 'Edit outing' : 'New outing');
-    void this.load().catch(error => this.contentEl.createEl('p', { text: errorText(error), cls: 'charity-error' }));
-  }
-  private async load(): Promise<void> {
-    const [places, areas] = await Promise.all([this.plugin.store.listPlaces(), this.plugin.store.listLocalities()]);
-    if (this.closed) return; this.places = places;
-    if (this.existingPath) {
-      this.record = await this.plugin.store.outings.get(this.existingPath);
-      if (this.closed) return;
-      this.name = this.record.name; this.groups = clone(this.record.groups); this.planning = this.record.planning ? clone(this.record.planning) : undefined;
-      if (this.record.operation || this.record.draft) {
-        this.contentEl.createEl('p', { text: 'Finish, resume or discard the saved visit draft before editing this outing.', cls: 'charity-hint' });
-        button(this.contentEl, 'Open outing', async () => { this.close(); await this.plugin.openFile(this.existingPath!); }); return;
-      }
-    }
-    const el = this.contentEl; renderContextBanner(this.plugin, el);
-    el.createEl('p', { text: 'Choose sources and parking for this outing. Shop shortlists and preferred parking stay as you set them.', cls: 'charity-hint' });
-    new Setting(el).setName('Outing name').addText(text => { text.inputEl.setAttribute('aria-label', 'Outing name'); text.setValue(this.name).onChange(value => this.name = value); });
-    const filters = el.createDiv('charity-outing-filters');
-    const search = filters.createEl('input', { type: 'search', placeholder: 'Search sources', attr: { 'aria-label': 'Search outing sources' } });
-    search.oninput = () => { this.candidateFilter.text = search.value; this.renderCandidates(); };
-    const area = filters.createEl('select', { attr: { 'aria-label': 'Filter outing area' } }); area.createEl('option', { value: '', text: 'All areas' });
-    for (const item of areas) area.createEl('option', { value: item.path, text: item.label });
-    area.onchange = () => { this.candidateFilter.area = area.value; this.renderCandidates(); };
-    const type = filters.createEl('select', { attr: { 'aria-label': 'Filter outing source type' } }); type.createEl('option', { value: '', text: 'All source types' });
-    for (const item of [...new Set(places.filter(place => place.kind === 'shop').map(place => String(place.properties.source_type || 'Charity shop')))].sort()) type.createEl('option', { value: item, text: item });
-    type.onchange = () => { this.candidateFilter.type = type.value; this.renderCandidates(); };
-    const actions = el.createDiv('charity-actions');
-    button(actions, 'Add shortlist', () => {
-      for (const place of this.available().filter(place => place.properties.shortlist === true)) this.addSource(place);
-      this.changed();
-    });
-    this.candidateEl = el.createDiv('charity-outing-candidates');
-    this.selectedEl = el.createDiv('charity-outing-selected');
-    this.previewEl = el.createDiv('charity-outing-order-preview'); this.previewEl.hide();
-    const footer = el.createDiv('charity-modal-footer');
-    const status = footer.createDiv({ attr: { role: 'status', 'aria-live': 'polite' } });
-    button(footer, 'Save outing', async () => {
-      if (!this.name.trim()) throw Error('Give this outing a name.');
-      if (!stopsOf({ groups: this.groups }).length) throw Error('Add at least one source.');
-      if (this.unresolved.size) throw Error('Choose parking or On foot for each source with several parking options.');
-      status.setText('Saving…');
-      try {
-        const input = { name: this.name.trim(), groups: clone(this.groups), ...(this.planning ? { planning: clone(this.planning) } : {}) };
-        const saved = this.record
-          ? await this.plugin.store.outings.updatePlan(this.record.path, input, this.record.revision)
-          : await this.plugin.store.outings.create(input);
-        this.close(); await this.plugin.openFile(saved.path); new Notice('Outing saved');
-      } catch (error) { status.setText('Not saved: ' + errorText(error)); status.addClass('charity-error'); }
-    }, true);
-    this.changed();
-  }
-  private available(): PlaceRecord[] {
-    return this.places.filter(place => place.kind === 'shop' && place.properties.shop_closed !== true &&
-      (!this.candidateFilter.area || place.locality === this.candidateFilter.area ||
-        place.locality.startsWith(this.candidateFilter.area.replace(/\.md$/, '') + '/')) &&
-      (!this.candidateFilter.type || String(place.properties.source_type || 'Charity shop') === this.candidateFilter.type) &&
-      (!this.candidateFilter.text || [place.name, place.properties.address, place.properties.comments].join(' ').toLocaleLowerCase().includes(this.candidateFilter.text.toLocaleLowerCase())));
-  }
-  private addSource(place: PlaceRecord): void {
-    if (stopsOf({ groups: this.groups }).some(stop => stop.sourcePath === place.path)) return;
-    const proposed = proposeOutingGroups([place], this.places);
-    const parking = resolveParking(place, this.places);
-    if (proposed.issues.length || parking.status === 'choice' || parking.status === 'invalid') this.unresolved.add(place.path);
-    const group = proposed.groups[0] ?? { id: crypto.randomUUID(), parkingPath: '', stops: [] };
-    const stop = group.stops[0] ?? { id: crypto.randomUUID(), sourcePath: place.path, status: 'pending' as const };
-    const existing = group.parkingPath ? this.groups.find(item => item.parkingPath === group.parkingPath) : undefined;
-    if (existing) existing.stops.push(stop); else this.groups.push({ ...group, id: crypto.randomUUID(), stops: [stop] });
-  }
-  private changed(): void {
-    if (this.planning) {
-      const ids = new Set(stopsOf({ groups: this.groups }).map(stop => stop.id));
-      this.planning.stopOverrides = Object.fromEntries(Object.entries(this.planning.stopOverrides).filter(([id]) => ids.has(id)));
-    }
-    this.previewEl?.hide(); this.previewEl?.empty(); this.renderCandidates(); this.renderSelected();
-  }
-  private renderCandidates(): void {
-    if (!this.candidateEl) return; this.candidateEl.empty();
-    const selected = new Set(stopsOf({ groups: this.groups }).map(stop => stop.sourcePath));
-    const places = this.available().filter(place => !selected.has(place.path));
-    if (!places.length) this.candidateEl.createEl('p', { text: 'No more matching sources.', cls: 'charity-hint' });
-    for (const place of places) {
-      const row = new Setting(this.candidateEl).setName(place.name).setDesc(String(place.properties.comments || formatRating(place.properties.rating)));
-      row.addButton(b => {
-        b.setButtonText('Add'); b.buttonEl.setAttribute('aria-label', 'Add ' + place.name);
-        b.onClick(() => { this.addSource(place); this.changed(); });
-      });
-    }
-  }
-  private chooseParking(stop: OutingStop, old: OutingGroup, path: string): void {
-    this.unresolved.delete(stop.sourcePath); old.stops = old.stops.filter(item => item.id !== stop.id);
-    const target = path ? this.groups.find(group => group.parkingPath === path && group.id !== old.id) : undefined;
-    if (target) target.stops.push(stop);
-    else if (!old.stops.length) { old.parkingPath = path; old.stops.push(stop); }
-    else this.groups.push({ id: crypto.randomUUID(), parkingPath: path, stops: [stop] });
-    this.groups = this.groups.filter(group => group.stops.length); this.changed();
-  }
-  private renderSelected(): void {
-    if (!this.selectedEl) return; this.selectedEl.empty();
-    this.selectedEl.createEl('h3', { text: 'Selected stops (' + stopsOf({ groups: this.groups }).length + ')' });
-    if (!this.groups.length) { this.selectedEl.createEl('p', { text: 'Add a source or your shortlist to begin.', cls: 'charity-hint' }); return; }
-    const planningActions = this.selectedEl.createDiv('charity-actions');
-    button(planningActions, 'Plan journey', () => {
-      if (this.unresolved.size) throw Error('Choose parking or On foot for each source with several parking options before planning.');
-      new OutingPlannerModal(this.plugin, {
-        draft: () => {
-          if (this.closed) throw Error('The outing draft is closed.');
-          return { ...(this.record ?? { id: 'unsaved-outing', path: '', status: 'planned' as const, createdAt: '', revision: '' }),
-            name: this.name, groups: clone(this.groups), planning: this.planning ? clone(this.planning) : undefined };
-        },
-        onApplyDraft: (groups, options) => {
-          if (this.closed) throw Error('The outing draft is closed.');
-          this.groups = clone(groups); this.planning = clone(options); this.changed();
-        },
-      }).open();
-    });
-    const order = new Setting(this.selectedEl).setName('First parking / walking group');
-    let firstGroup = this.groups.find(group => group.stops.some(stop => stop.status === 'pending'))?.id ?? '';
-    order.addDropdown(d => {
-      for (const group of this.groups) if (group.stops.some(stop => stop.status === 'pending')) d.addOption(group.id, this.groupName(group));
-      d.setValue(firstGroup).onChange(value => firstGroup = value);
-    });
-    order.addButton(b => b.setButtonText('Preview suggested order').onClick(() => {
-      const suggestion = suggestOutingOrder(clone(this.groups), this.places, firstGroup);
-      this.previewOrder(suggestion.groups, suggestion.warnings);
-    }));
-    this.selectedEl.createEl('p', { text: 'Suggested order uses straight-line distance. Review it for roads, entrances and walking access; it is not a route or travel-time estimate.', cls: 'charity-hint' });
-    this.groups.forEach((group, index) => {
-      const section = this.selectedEl.createDiv('charity-outing-group');
-      section.createEl('h4', { text: (index + 1) + '. ' + this.groupName(group) });
-      const controls = section.createDiv('charity-outing-stop-actions');
-      const hasCompleted = group.stops.some(stop => stop.status !== 'pending');
-      const up = button(controls, 'Move group up', () => { move(this.groups, index, -1); this.changed(); });
-      up.disabled = index === 0 || hasCompleted || this.groups[index - 1]?.stops.some(stop => stop.status !== 'pending') === true;
-      const down = button(controls, 'Move group down', () => { move(this.groups, index, 1); this.changed(); });
-      down.disabled = index === this.groups.length - 1 || hasCompleted || this.groups[index + 1]?.stops.some(stop => stop.status !== 'pending') === true;
-      let firstStop = '';
-      const walking = new Setting(section).setName('Walking order');
-      walking.addDropdown(d => {
-        d.addOption('', group.parkingPath ? 'Start from parking' : 'Choose a first source');
-        for (const stop of group.stops.filter(stop => stop.status === 'pending')) d.addOption(stop.id, placeName(stop.sourcePath, this.places));
-        d.onChange(value => firstStop = value);
-      });
-      walking.addButton(b => b.setButtonText('Preview walking order').onClick(() => {
-        const suggestion = suggestWalkingOrder(clone(group), this.places, firstStop || undefined);
-        this.previewOrder(this.groups.map(value => value.id === group.id ? suggestion.group : clone(value)), suggestion.warnings);
-      }));
-      group.stops.forEach((stop, stopIndex) => {
-        const row = section.createDiv('charity-outing-stop');
-        row.createEl('p', { text: (stopIndex + 1) + '. ' + stopLabel(stop, this.places) });
-        const place = this.places.find(value => value.path === stop.sourcePath);
-        if (!place) row.createEl('p', { text: 'This source note is missing. Remove this pending stop or restore the note.', cls: 'charity-error' });
-        if (place && stop.status === 'pending') {
-          const choices = resolveParking(place, this.places).choices;
-          new Setting(row).setName('Parking for this outing').addDropdown(d => {
-            d.selectEl.setAttribute('aria-label', 'Parking for ' + place.name);
-            if (this.unresolved.has(place.path)) d.addOption('__choose__', 'Choose parking…');
-            d.addOption('', 'On foot / source location');
-            for (const option of choices) d.addOption(option.path, option.name + (!option.coordinates ? ' (needs coordinates)' : ''));
-            if (group.parkingPath && !choices.some(option => option.path === group.parkingPath)) d.addOption(group.parkingPath, placeName(group.parkingPath, this.places));
-            d.setValue(this.unresolved.has(place.path) ? '__choose__' : group.parkingPath);
-            d.onChange(value => { if (value !== '__choose__') this.chooseParking(stop, group, value); });
-          });
-        }
-        const actions = row.createDiv('charity-outing-stop-actions');
-        const up = button(actions, 'Move up', () => { move(group.stops, stopIndex, -1); this.changed(); });
-        up.disabled = stop.status !== 'pending' || stopIndex === 0 || group.stops[stopIndex - 1]?.status !== 'pending';
-        const down = button(actions, 'Move down', () => { move(group.stops, stopIndex, 1); this.changed(); });
-        down.disabled = stop.status !== 'pending' || stopIndex === group.stops.length - 1 || group.stops[stopIndex + 1]?.status !== 'pending';
-        if (stop.status === 'pending') button(actions, 'Remove stop', () => {
-          group.stops = group.stops.filter(value => value.id !== stop.id); this.groups = this.groups.filter(value => value.stops.length);
-          this.unresolved.delete(stop.sourcePath); this.changed();
-        });
-      });
-    });
-  }
-  private groupName(group: OutingGroup): string { return group.parkingPath ? 'Park at ' + placeName(group.parkingPath, this.places) : 'On foot · ' + placeName(group.stops[0]?.sourcePath ?? '', this.places); }
-  private previewOrder(groups: OutingGroup[], warnings: string[]): void {
-    this.previewEl.empty(); this.previewEl.show();
-    this.previewEl.createEl('h4', { text: 'Suggested order preview' }); warningList(this.previewEl, warnings);
-    const list = this.previewEl.createEl('ol');
-    for (const group of groups) {
-      const row = list.createEl('li', { text: this.groupName(group) });
-      row.createEl('p', { text: group.stops.map(stop => stopLabel(stop, this.places)).join(' → ') });
-    }
-    button(this.previewEl, 'Use suggested order', () => { this.groups = clone(groups); this.changed(); });
-    button(this.previewEl, 'Keep current order', () => this.previewEl.hide());
-  }
-  onClose(): void { this.closed = true; this.finishEditing?.(); this.contentEl.empty(); }
-}
-
 export async function renderOutingsHome(plugin: NotebookContext, owner: Component, el: HTMLElement, isCurrent: () => boolean = () => true): Promise<void> {
   const outings = await plugin.store.outings.list(); if (!isCurrent()) return;
   renderContextBanner(plugin, el); el.addClass('charity-outing');
@@ -271,7 +51,7 @@ export async function renderOutingsHome(plugin: NotebookContext, owner: Componen
 export class OutingHistoryModal extends Modal {
   private owner = new Component();
   constructor(private plugin: NotebookContext) { super(plugin.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     this.titleEl.setText('Outings'); this.modalEl.addClass('charity-outing-modal'); this.owner.load();
     void renderOutingsHome(this.plugin, this.owner, this.contentEl).catch(error => this.contentEl.createEl('p', { text: errorText(error), cls: 'charity-error' }));
   }
@@ -374,8 +154,8 @@ export async function renderOuting(plugin: NotebookContext, owner: Component, el
       }
     }
     if (place) {
-      card.createEl('p', { text: formatRating(place.properties.rating) + (place.properties.comments ? ' · ' + String(place.properties.comments) : ''), cls: 'charity-outing-summary' });
-      const lastVisited = String(place.properties.last_visited ?? '').trim();
+      card.createEl('p', { text: formatRating(place.properties.rating) + (place.properties.comments ? ' · ' + propertyText(place.properties.comments) : ''), cls: 'charity-outing-summary' });
+      const lastVisited = propertyText(place.properties.last_visited).trim();
       card.createEl('p', { text: lastVisited ? 'Last visit: ' + lastVisited : 'No visit recorded', cls: 'charity-hint' });
       const parking = places.find(value => value.path === currentGroup.parkingPath);
       card.createEl('p', { text: currentGroup.parkingPath ? 'Parking: ' + placeName(currentGroup.parkingPath, places) : 'On foot / source location', cls: 'charity-hint' });
@@ -443,9 +223,9 @@ export class OutingVisitsModal extends Modal {
   private generation = 0;
   private timer?: number;
   constructor(private context: NotebookContext, private path: string) { super(context.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     this.titleEl.setText('Review outing visits'); this.modalEl.addClass('charity-outing-modal'); this.owner.load();
-    const refresh = () => { window.clearTimeout(this.timer); this.timer = window.setTimeout(() => { void this.load().catch(error => { if (!this.closed) new Notice(errorText(error)); }); }, 150); };
+    const refresh = () => { modalWindow(this).clearTimeout(this.timer); this.timer = modalWindow(this).setTimeout(() => { void this.load().catch(error => { if (!this.closed) new Notice(errorText(error)); }); }, 150); };
     for (const event of ['create', 'modify', 'delete', 'rename'] as const) this.owner.registerEvent(this.context.app.vault.on(event as 'modify', refresh));
     void this.load().catch(error => { if (!this.closed) this.contentEl.createEl('p', { text: errorText(error), cls: 'charity-error' }); });
   }
@@ -465,13 +245,13 @@ export class OutingVisitsModal extends Modal {
     }
   }
   close(): void { this.closed = true; super.close(); }
-  onClose(): void { this.closed = true; this.generation++; window.clearTimeout(this.timer); this.owner.unload(); this.contentEl.empty(); }
+  onClose(): void { this.closed = true; this.generation++; modalWindow(this).clearTimeout(this.timer); this.owner.unload(); this.contentEl.empty(); }
 }
 
 class FinishOutingModal extends Modal {
   private finishEditing?: () => void;
   constructor(private plugin: NotebookContext, private record: OutingRecord) { super(plugin.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     if (!(this.finishEditing = this.plugin.beginEditing())) { this.close(); return; }
     this.titleEl.setText('Finish outing'); renderContextBanner(this.plugin, this.contentEl);
     this.contentEl.createEl('p', { text: progress(this.record) + '. Unfinished stops and any visit draft are kept so you can resume later.' });
@@ -482,7 +262,7 @@ class FinishOutingModal extends Modal {
 class DiscardDraftModal extends Modal {
   private finishEditing?: () => void;
   constructor(private plugin: NotebookContext, private record: OutingRecord) { super(plugin.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     if (!(this.finishEditing = this.plugin.beginEditing())) { this.close(); return; }
     this.titleEl.setText('Discard visit draft?'); renderContextBanner(this.plugin, this.contentEl);
     this.contentEl.createEl('p', { text: 'This removes only the unfinished draft. Saved visits and outing progress are kept.' });
@@ -493,7 +273,7 @@ class DiscardDraftModal extends Modal {
 class SkipStopModal extends Modal {
   private finishEditing?: () => void;
   constructor(private plugin: NotebookContext, private record: OutingRecord, private stop: OutingStop) { super(plugin.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     if (!(this.finishEditing = this.plugin.beginEditing())) { this.close(); return; }
     this.titleEl.setText('Skip stop'); renderContextBanner(this.plugin, this.contentEl); let reason = '';
     new Setting(this.contentEl).setName('Reason (optional)').addTextArea(text => { text.inputEl.setAttribute('aria-label', 'Skip reason'); text.onChange(value => reason = value); });
@@ -521,7 +301,7 @@ export class OutingVisitModal extends Modal {
   private confirmSkipped = false;
   private background = () => { if (this.contentEl.ownerDocument?.hidden) void this.flush().catch(error => this.draftFailure(error)); };
   constructor(private plugin: NotebookContext, private path: string, private stopId: string) { super(plugin.app); }
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     if (!(this.finishEditing = this.plugin.beginEditing())) { this.close(); return; }
     this.titleEl.setText('Record visit'); this.modalEl.addClass('charity-outing-visit-modal');
     this.contentEl.ownerDocument?.addEventListener('visibilitychange', this.background);
@@ -561,15 +341,15 @@ export class OutingVisitModal extends Modal {
     button(footer, 'Close', async () => { await this.flush(); this.close(); });
   }
   private schedule(): void {
-    this.changed = true; window.clearTimeout(this.timer);
-    this.status?.setText('Saving draft…'); this.timer = window.setTimeout(() => { void this.flush().catch(error => this.draftFailure(error)); }, 500);
+    this.changed = true; modalWindow(this).clearTimeout(this.timer);
+    this.status?.setText('Saving draft…'); this.timer = modalWindow(this).setTimeout(() => { void this.flush().catch(error => this.draftFailure(error)); }, 500);
   }
   private draftFailure(error: unknown): void {
     this.status?.setText('Draft not saved: ' + errorText(error)); this.status?.addClass('charity-error');
     if (this.closed) new Notice('Visit draft could not be saved: ' + errorText(error), 12000);
   }
   private flush(): Promise<void> {
-    window.clearTimeout(this.timer);
+    modalWindow(this).clearTimeout(this.timer);
     if (!this.changed || this.completed || this.record?.operation) return this.queue;
     const snapshot = this.fields?.snapshot() ?? clone(this.input), signature = JSON.stringify(snapshot);
     const run = async () => {
@@ -604,7 +384,7 @@ export class OutingVisitModal extends Modal {
     }
   }
   private showRecovery(): void {
-    window.clearTimeout(this.timer); this.contentEl.empty();
+    modalWindow(this).clearTimeout(this.timer); this.contentEl.empty();
     renderContextBanner(this.plugin, this.contentEl);
     this.contentEl.createEl('p', { text: 'The visit save needs completion. Its original input is retained. Retry completion before editing or advancing this stop.', cls: 'charity-error' });
     button(this.contentEl, 'Retry completion', async () => {
@@ -625,7 +405,7 @@ export class OutingVisitModal extends Modal {
     void this.flush().then(() => { this.setSaving(false); super.close(); }).catch(error => { this.setSaving(false); this.draftFailure(error); }).finally(() => { this.closing = false; });
   }
   onClose(): void { this.fields?.dispose?.();
-    this.closed = true; window.clearTimeout(this.timer); this.contentEl.ownerDocument?.removeEventListener('visibilitychange', this.background);
+    this.closed = true; modalWindow(this).clearTimeout(this.timer); this.contentEl.ownerDocument?.removeEventListener('visibilitychange', this.background);
     void this.flush().catch(error => this.draftFailure(error)).finally(() => this.finishEditing?.());
   }
 }

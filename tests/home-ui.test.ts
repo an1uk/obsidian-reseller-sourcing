@@ -30,13 +30,13 @@ function harness(kind: 'real' | 'examples' = 'real') {
     openFile: async (path: string) => { calls.opened.push(path); }, newPlace: (value: string) => { calls.newPlaces.push(value); }, newOuting: () => { calls.newOutings++; }, reviewCaptures: async () => { calls.captures++; }, openClipperSetup: () => { calls.templates++; }, store: { visits: { inspectSavedWork: async () => ({ operations: [{ id: 'operation', sourcePath: source.path }], warnings: [], drafts: [] }) } } };
   const module = { exports: {} as Record<string, any> };
   const code = transformSync(fs.readFileSync(new URL('../src/ui/home.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'cjs', target: 'es2022' }).code;
-  vm.runInNewContext(code, { module, exports: module.exports, Map, Promise, Error, require(id: string) {
+  vm.runInNewContext(code, { module, exports: module.exports, Map, Promise, Error, require(id: string) { if (id.endsWith('modal-layout')) return { markInputModal() {} };
     if (id === 'obsidian') return { Modal, TFile };
     if (id === '../home/overview') return { inspectHome: async () => { calls.inspected++; if (blocked) await blocked; return structuredClone(overview); } };
     if (id === '../ui') return {
       button: (parent: Element, text: string, run: () => unknown, primary = false) => { const value = parent.createEl('button', { text, cls: primary ? 'mod-cta' : '' }); value.onclick = async () => { try { await run(); } catch (error: any) { calls.errors.push(error.message); } }; return value; },
       details: (parent: Element, text: string) => { const value = parent.createEl('details'); value.createEl('summary', { text }); return value; },
-      errorText: (error: any) => error.message,
+      propertyText: (value: unknown, fallback = '') => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : fallback, errorText: (error: any) => error.message,
       pickPlace: (_context: unknown, values: unknown[], choose: (value: unknown) => unknown, title: string) => { calls.pickers.push({ context: _context, values, choose, title }); },
       renderContextBanner: (_context: any, el: Element) => { if (_context.kind === 'examples') el.createEl('p', { text: 'Fictional examples' }); },
       renderExamplesEntry: (_context: unknown, el: Element) => el.createEl('button', { text: 'Examples' }),

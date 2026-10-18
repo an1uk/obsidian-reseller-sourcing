@@ -1,3 +1,4 @@
+import { markInputModal } from './modal-layout';
 import { DropdownComponent, Modal, Platform, Setting } from 'obsidian';
 import type { NotebookContext } from '../notebook-context';
 import type { PlaceRecord } from '../types';
@@ -25,7 +26,7 @@ export class OutingRouteModal extends Modal {
   private status!: HTMLElement;
   constructor(private plugin: NotebookContext, private path: string) { super(plugin.app); }
 
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     if (!(this.finishEditing = this.plugin.beginEditing())) { this.close(); return; }
     this.modalEl.addClass('charity-outing-route-modal'); this.titleEl.setText(this.plugin.externalActions === 'preview' ? 'Preview route in Google Maps' : 'Open route in Google Maps'); renderContextBanner(this.plugin, this.contentEl);
     this.contentEl.createEl('p',{text:'Review driving destinations in your saved outing order. Open one part at a time and check the stops in Google Maps.',cls:'charity-hint'});
@@ -37,7 +38,7 @@ export class OutingRouteModal extends Modal {
         void this.perform(async () => { this.routeScope = value as OutingRouteScope; await this.refresh(); });
       });
     });
-    new Setting(this.contentEl).setName('Open with').setDesc('Choose where the link will open. If Android opens a browser, choose Mobile browser.').addDropdown(control => {
+    new Setting(this.contentEl).setName('Open with').setDesc('Choose where the link will open. If Android opens a browser, use the mobile browser profile.').addDropdown(control => {
       this.targetControl = control; control.selectEl.setAttribute('aria-label','Google Maps export target');
       for (const [value,label] of Object.entries(ROUTE_TARGET_LABELS)) control.addOption(value,label);
       control.setValue(this.routeTarget).onChange(value => {
@@ -128,7 +129,7 @@ export class OutingRouteModal extends Modal {
       for (const groupId of [...new Set(problems.map(problem => problem.groupId))]) {
         const values = problems.filter(problem => problem.groupId === groupId);
         const row = section.createDiv('charity-outing-route-problem'); row.dataset.groupId = groupId;
-        row.createEl('strong',{text:values[0]!.name});
+        row.createEl('strong',{text:values[0].name});
         for (const problem of values) row.createEl('p',{text:problem.message,cls:'charity-error'});
         row.createEl('p',{text:'Sources served: ' + this.sourceNames(groupId),cls:'charity-hint'});
         const actions = row.createDiv('charity-actions');
@@ -136,7 +137,7 @@ export class OutingRouteModal extends Modal {
           const place = this.places.find(place => place.path === path); if (place) this.openNote(actions,path,place.name);
         }
         this.action(actions,'Open outing',() => this.guarded(async () => { this.close(); await this.plugin.openFile(this.path); },false),this.failed);
-        this.action(actions,'Exclude from this route',async () => { this.exclusions.add(groupId); await this.refresh(); },false,'Exclude group for ' + values[0]!.name + ' from this route');
+        this.action(actions,'Exclude from this route',async () => { this.exclusions.add(groupId); await this.refresh(); },false,'Exclude group for ' + values[0].name + ' from this route');
       }
     }
     const excluded = preview.excluded.map(group => group.groupId);

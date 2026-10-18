@@ -1,10 +1,11 @@
 import type { Coordinates, LocalityRecord, PlaceRecord } from '../types';
 import { haversineKm, isGoogleMapsUrl, validateCoordinates } from './coordinates';
+import { hasControlCharacters, isUnknownArray } from './guards';
 export * from './coordinates';
 export * from './hierarchy';
 
 export function safeFileName(value: string, fallback = 'Untitled'): string {
-  const name = value.normalize('NFC').replace(/[\x00-\x1f<>:"/\\|?*#\[\]^]/g, ' ').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '').slice(0, 180).replace(/[. ]+$/, '');
+  const name = Array.from(value.normalize('NFC'), character => hasControlCharacters(character, false) ? ' ' : character).join('').replace(/[<>:"/\\|?*#[\]^]/g, ' ').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '').slice(0, 180).replace(/[. ]+$/, '');
   if (!name || name === '.' || name === '..') return fallback;
   return /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) ? `_${name}` : name;
 }
@@ -26,17 +27,17 @@ export function ratingColor(value: unknown): string {
 }
 export function linkTarget(value: unknown): string {
   if (typeof value !== 'string') return '';
-  return value.trim().replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0]!.split('#')[0]!.replace(/\.md$/i, '').replace(/\\/g, '/');
+  return value.trim().replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0].split('#')[0].replace(/\.md$/i, '').replace(/\\/g, '/');
 }
 export const normalizeWikiLink = linkTarget;
 function linkedRecord<T extends { path: string }>(value: unknown, records: T[]): T | null {
   const target = linkTarget(value);
   if (!target) return null;
   const exact = records.filter(p => p.path.replace(/\.md$/i, '') === target);
-  if (exact.length === 1) return exact[0]!;
+  if (exact.length === 1) return exact[0];
   if (target.includes('/')) return null;
   const byName = records.filter(p => p.path.split('/').pop()!.replace(/\.md$/i, '') === target);
-  return byName.length === 1 ? byName[0]! : null;
+  return byName.length === 1 ? byName[0] : null;
 }
 export function localitySuggestions(coordinates: Coordinates | null, localities: LocalityRecord[], places: PlaceRecord[], radiusKm = 1): { locality: LocalityRecord; distanceKm: number }[] {
   if (!coordinates || !validateCoordinates(coordinates) || !Number.isFinite(radiusKm) || radiusKm < 0) return [];
@@ -49,7 +50,7 @@ export function resolveParking(shop: PlaceRecord, places: PlaceRecord[]): Parkin
   if (!shops.some(p => p.path === shop.path)) shops.push(shop);
   const choices = parking.filter(p => {
     const links = p.properties.parking_for;
-    return (Array.isArray(links) ? links : [links]).some(v => linkedRecord(v, shops)?.path === shop.path);
+    return (isUnknownArray(links) ? links : [links]).some(v => linkedRecord(v, shops)?.path === shop.path);
   });
   const preferredLink = shop.properties.parking_location;
   if (linkTarget(preferredLink)) {
@@ -58,7 +59,7 @@ export function resolveParking(shop: PlaceRecord, places: PlaceRecord[]): Parkin
     return { status: validateCoordinates(preferred?.coordinates) ? 'preferred' : 'invalid', choices, destination: validateCoordinates(preferred?.coordinates) ? preferred : null };
   }
   if (choices.length > 1) return { status: 'choice', choices, destination: null };
-  if (choices.length === 1) return { status: validateCoordinates(choices[0]!.coordinates) ? 'single' : 'invalid', choices, destination: validateCoordinates(choices[0]!.coordinates) ? choices[0]! : null };
+  if (choices.length === 1) return { status: validateCoordinates(choices[0].coordinates) ? 'single' : 'invalid', choices, destination: validateCoordinates(choices[0].coordinates) ? choices[0] : null };
   return { status: 'shop', choices, destination: validateCoordinates(shop.coordinates) ? shop : null };
 }
 export function googleMapsUrl(place: PlaceRecord): string {

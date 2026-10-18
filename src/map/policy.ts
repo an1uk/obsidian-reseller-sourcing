@@ -1,4 +1,5 @@
 import type { Coordinates, PlaceRecord } from '../types';
+import { isUnknownArray } from '../domain/guards';
 
 export const MAP_VIEW_TYPE = 'charity-sourcing-map';
 export const LOCALITY_HEIGHT = 680;
@@ -7,8 +8,10 @@ export const PLACE_ZOOM = 16;
 export const LOCALITY_MAX_ZOOM = 15;
 
 export function validCoordinates(value: unknown): value is Coordinates {
-  return Array.isArray(value) && value.length === 2 && value.every(v => typeof v === 'number' && Number.isFinite(v))
-    && Math.abs(value[0]) <= 90 && Math.abs(value[1]) <= 180;
+  if (!isUnknownArray(value) || value.length !== 2) return false;
+  const [lat, lng] = value;
+  return typeof lat === 'number' && Number.isFinite(lat) && Math.abs(lat) <= 90
+    && typeof lng === 'number' && Number.isFinite(lng) && Math.abs(lng) <= 180;
 }
 export function mapCoordinates([lat, lng]: Coordinates): [number, number] { return [lng, lat]; }
 export function fitOptions(mobile: boolean) { return { padding: mobile ? 32 : 64, maxZoom: LOCALITY_MAX_ZOOM, duration: 0 }; }

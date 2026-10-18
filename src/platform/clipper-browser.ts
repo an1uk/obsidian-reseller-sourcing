@@ -1,3 +1,6 @@
+import { hasControlCharacters } from '../domain/guards';
+declare const require: ((id: string) => unknown) | undefined;
+
 export const CHROME_CLIPPER_SETTINGS_URL = 'chrome-extension://cnjifjpddelmedmihgijeibhnjfabmlf/settings.html?section=templates';
 export interface ChromeSettingsLaunch { executable: string; args: string[]; }
 
@@ -14,7 +17,7 @@ export function getChromeSettingsLaunch(
   const path = (load('node:path') as typeof import('node:path')).win32;
   for (const variable of ['LOCALAPPDATA', 'PROGRAMFILES', 'PROGRAMFILES(X86)']) {
     const root = Object.entries(env).find(([key]) => key.toUpperCase() === variable)?.[1];
-    if (!root || !/^[a-z]:[\\/]/i.test(root) || /[\x00-\x1f<>"|?*]/.test(root) || root.slice(2).includes(':') || root.split(/[\\/]/).some(part => part === '.' || part === '..')) continue;
+    if (!root || !/^[a-z]:[\\/]/i.test(root) || hasControlCharacters(root, false) || /[<>"|?*]/.test(root) || root.slice(2).includes(':') || root.split(/[\\/]/).some(part => part === '.' || part === '..')) continue;
     const executable = path.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe');
     if (exists(executable)) return { executable, args: [CHROME_CLIPPER_SETTINGS_URL] };
   }

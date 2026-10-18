@@ -135,10 +135,10 @@ export function bundledAssets(root: string, vaultName = ''): Record<string, stri
   const original = classicBundledAssets(root, vaultName);
   return {
     [root + '/Home.md']: '```charity-sourcing\nview: home\n```\n',
-    [root + '/System/Sources.base']: original[root + '/System/Sources.base']!,
-    [root + '/System/Parking.base']: original[root + '/System/Parking.base']!,
-    [root + '/System/Templates/Source.md']: original[root + '/Templates/Source.md']!,
-    [root + '/System/Templates/Parking.md']: original[root + '/Templates/Parking.md']!,
+    [root + '/System/Sources.base']: original[root + '/System/Sources.base'],
+    [root + '/System/Parking.base']: original[root + '/System/Parking.base'],
+    [root + '/System/Templates/Source.md']: original[root + '/Templates/Source.md'],
+    [root + '/System/Templates/Parking.md']: original[root + '/Templates/Parking.md'],
     [root + '/System/Guide.md']: 'Open the Sourcing workspace from the store ribbon icon or [[' + root + '/Home|Home]].\n\n' +
       '## Choose where to go\n\nChoose an area or your shortlist, select places, review the journey, then start or save it for later. Preparation is saved as you go. Improve journey offers distance and opening-hours planning; it is optional. Return to start is off, visits allow 20 minutes, and distances use miles unless changed in settings.\n\n' +
       '## At a place\n\nRecord visit and Directions are the main actions. Maps, visit history and reference details have their own sections. Driving uses the selected parking; walking targets the source. Parking can serve several sources. Missing pins remain editable.\n\n' +

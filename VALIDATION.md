@@ -1,4 +1,4 @@
-# Validation: Reseller sourcing 0.11.0
+# Validation: Reseller sourcing 0.11.1
 
 One shared desktop/Android plugin, ID **charity-sourcing**, requiring Obsidian **1.14.4** or newer. Clipper templates remain **v0.4.2**. This document distinguishes repeatable public-tree checks from historical native and physical acceptance. Private captures, screenshots, device details, vault paths and test harnesses are not included in the repository.
 
@@ -8,6 +8,7 @@ With Node.js 22 or newer, run:
 
 ```sh
 npm ci
+npm run lint
 npm run package
 npm test
 ```
@@ -16,7 +17,23 @@ Packaging includes type checking, a production build, the universal ZIP, three s
 
 Three tests are optional and normally skip: installed Clipper import/selected-panel extraction, selected-listing contacts, and native Bases descendant-area filters. They require a separately supplied local harness selected by `CLIPPER_TEST_HARNESS_DIR`. The harness contains integration routines from separately installed applications and is not distributed with this project. A passing portable suite does not imply those integrations or interactive browser capture have been tested.
 
-On 18 October 2026, the exact staged public source was exported into a clean directory and verified with Node.js 22.23.3 on Windows. Locked dependency installation, type checking, production build and packaging succeeded. **478 tests passed, zero failed, and the three optional integration tests skipped**. All 159 source files remained byte-identical after these checks. The build required none of the excluded local acceptance or deployment files.
+For 0.11.0, the reviewed public source was exported into a clean directory and verified with Node.js 22.23.3 on Windows: 478 tests passed, zero failed and the three optional integration tests skipped. No excluded acceptance or deployment files were needed.
+
+## Community-review corrections in 0.11.1
+
+The source and scoped CSS use the official Obsidian lint configurations, with explicit unsafe-assignment/call/member/argument/return and redundant-assertion rules. CI treats warnings as failures. Tests cover searchable settings, failed-save rollback, malformed data, incomplete drafts, concurrent edits, custom configuration directories, owner-window DOM handling and context isolation. Frozen historical example outputs remain covered by their recorded byte hashes.
+
+Pull requests and source changes run read-only CI. Only an exact version-tag push in this repository can enter the separate attestation and publishing jobs. Every one of the five downloads is attested, and the publisher verifies its workflow identity and source commit before creating a standard release. The three standard plugin files, manual-install ZIP and checksum document are built once and retain those bytes through publication.
+
+Vault discovery and user-initiated clipboard writes remain necessary capabilities. They are documented in the README. ZIP/checksum downloads are optional conveniences and are not installed by Obsidian. Their presence may continue to produce an extra-files recommendation in Community review.
+
+On 18 October 2026, the 0.11.1 portable suite passed **500 tests with zero failures**, plus the three optional integration skips described above. Lint, type checking, packaging and licence checks passed. Historical example byte manifests remained unchanged. The production dependency audit reported zero vulnerabilities. Development lint tooling inherits advisories in its upstream tooling dependencies; these are not bundled in the plugin.
+
+Five isolated native review/control checks passed against Obsidian 1.14.4: side-effect-free settings indexing, failed-save rollback followed by successful refresh, native settings search, a separate pop-out window retaining its search text and a plain Markdown pop-out control. Owner-window events and caret restoration during redraw are covered separately by portable tests.
+
+All 14 workspace acceptance scenarios also passed against the final 0.11.1 build, including 360/390/420 px light/dark layouts, preparation resumption, parking choices, planning, visits, capture cancellation and cold reopening. They ran in an isolated desktop vault and verified the unrelated vault snapshot remained unchanged.
+
+Physical Android checks in a separate test vault covered native marker taps, bounded persistent popups, scrolling/dismissal, fictional navigation previews, light/dark keyboard-open visit forms, saved drafts and selectable-text fallback after clipboard denial. The final downloaded release files are verified separately before acceptance. These scoped checks do not establish every external-handler or sync scenario.
 
 ## Historical automated and desktop acceptance
 

@@ -2,6 +2,7 @@ import { Component, Modal, Notice } from 'obsidian';
 import type { NotebookContext } from '../notebook-context';
 import type { PreparationDraft } from './types';
 import { button, details, errorText } from '../ui';
+import { markInputModal } from '../ui/modal-layout';
 
 /** A close flushes the same draft used by background saves; completion is explicit. */
 export abstract class PreparationModal<T> extends Modal {
@@ -26,6 +27,7 @@ export abstract class PreparationModal<T> extends Modal {
     if (value) this.status?.setText('Saving…');
   }
   onOpen(): void {
+    markInputModal(this);
     this.finishEditing = this.context.beginEditing(); if (!this.finishEditing) { super.close(); return; }
     this.modalEl.addClass('charity-preparation-modal'); this.owner.load();
     this.contentEl.ownerDocument.addEventListener('visibilitychange', this.background);
@@ -63,11 +65,11 @@ export abstract class PreparationModal<T> extends Modal {
   }
   protected changed(): void {
     if (this.busy || this.closed || !this.draft || this.draft.phase !== 'editing') return;
-    this.draft.deferred = false; window.clearTimeout(this.timer); this.status?.setText('Saving draft…');
-    this.timer = window.setTimeout(() => void this.flush().catch(e => this.failure(e)), 500);
+    this.draft.deferred = false; this.contentEl.win.clearTimeout(this.timer); this.status?.setText('Saving draft…');
+    this.timer = this.contentEl.win.setTimeout(() => void this.flush().catch(e => this.failure(e)), 500);
   }
   protected flush(): Promise<void> {
-    window.clearTimeout(this.timer);
+    this.contentEl.win.clearTimeout(this.timer);
     if (!this.draft || this.draft.phase !== 'editing' || !this.meaningful()) return this.queue;
     const data = structuredClone(this.draft.data), signature = JSON.stringify(data);
     const run = async () => {
@@ -105,7 +107,7 @@ export abstract class PreparationModal<T> extends Modal {
     void this.flush().then(() => { this.closed = true; super.close(); }).catch(e => this.failure(e)).finally(() => this.setBusy(false));
   }
   onClose(): void {
-    this.closed = true; window.clearTimeout(this.timer); this.owner.unload();
+    this.closed = true; this.contentEl.win.clearTimeout(this.timer); this.owner.unload();
     this.contentEl.ownerDocument.removeEventListener('visibilitychange', this.background);
     void this.flush().catch(e => this.failure(e)).finally(() => { this.finishEditing?.(); this.finishEditing = undefined; });
   }

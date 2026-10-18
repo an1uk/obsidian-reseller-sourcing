@@ -10,14 +10,13 @@ The map implementation is adapted from **Obsidian Maps 0.2.2**, copyright 2025 O
 - Complete licence: `licenses/obsidian-maps-MIT.txt`
 - Source and modification record: `licenses/UPSTREAM.md`
 
-Copied and modified map code covers Bases integration, styles, marker/popups, controls, coordinate utilities, RTL loading and Mapbox URL compatibility. Changes introduce a separate view type, sourcing-note integration, shared parking, reviewed pin placement, locality framing and larger padding, lifecycle handling, map attribution, and the newer MapLibre renderer. The Maps community plugin itself is not required.
+Copied and modified map code covers Bases integration, styles, marker/popups, controls, coordinate utilities and Mapbox URL compatibility. Changes introduce a separate view type, sourcing-note integration, shared parking, reviewed pin placement, locality framing and larger padding, lifecycle handling, map attribution, and the newer MapLibre renderer. MapLibre now supplies built-in right-to-left text shaping; the deprecated external RTL loader has been removed. The Maps community plugin itself is not required.
 
 ## Bundled libraries
 
 | Component | Version | Licence / notices |
 | --- | --- | --- |
 | MapLibre GL JS | 6.14.0 | BSD-3-Clause; `licenses/maplibre-gl-BSD.txt` |
-| Mapbox GL RTL text | 0.3.0 | BSD-2-Clause plus ICU/Unicode permission notice; `licenses/mapbox-gl-rtl-text-BSD.txt` |
 | YAML | 2.9.1 | ISC; included under `licenses/dependencies/` |
 
 The package script copies the installed runtime dependencies' licence/copyright/notice files and records their exact versions in `licenses/dependencies.json`. This includes MapLibre's transitive dependencies and YAML, which is bundled at build time. Any build-generated legal notices are retained as `licenses/bundle-legal-notices.txt`.

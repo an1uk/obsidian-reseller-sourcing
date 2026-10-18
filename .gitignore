@@ -26,4 +26,5 @@ upstream/
 scripts/*
 !scripts/package.mjs
 !scripts/legal-notices.mjs
+!scripts/prepare-release.mjs
 src/map/adapt-upstream.mjs

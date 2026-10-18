@@ -1,3 +1,4 @@
+import { markInputModal } from './modal-layout';
 import { DropdownComponent, Modal } from 'obsidian';
 import type { NotebookContext } from '../notebook-context';
 import type { CaptureDraft, PlaceRecord } from '../types';
@@ -14,7 +15,7 @@ function displayValue(value: unknown): string {
     if ('topics' in snapshot) return displayValue(snapshot.topics) + '\nChecked: ' + displayValue(snapshot.checked);
     return Object.entries(snapshot).map(([key, item]) => key + ': ' + displayValue(item)).join('\n');
   }
-  return String(value);
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint' || typeof value === 'symbol' ? String(value) : 'Unavailable';
 }
 
 /** A pending capture stays untouched until the user explicitly applies or archives it. */
@@ -35,7 +36,7 @@ export class CaptureRefreshModal extends Modal {
 
   constructor(private plugin: NotebookContext, private draft: CaptureDraft, private matches: PlaceRecord[], private done?: () => void) { super(plugin.app); }
 
-  onOpen(): void {
+  onOpen(): void { markInputModal(this);
     if (!(this.finishEditing = this.plugin.beginEditing())) { this.close(); return; }
     this.modalEl.addClass('charity-capture-refresh-modal'); this.titleEl.setText('Review source updates'); renderContextBanner(this.plugin, this.contentEl);
     this.contentEl.createEl('p', { text: 'This capture matches an existing Google Maps listing. Choose which information to update. Your sourcing assessment, visits and note text stay as recorded.', cls: 'charity-hint' });
@@ -141,7 +142,7 @@ export class CaptureRefreshModal extends Modal {
       const values = row.createDiv('charity-capture-refresh-values');
       for (const [heading, value, cls] of [['Current', field.current, 'current'], ['Captured', field.incoming, 'incoming']] as const) {
         const cell = values.createDiv('charity-capture-refresh-' + cls);
-        cell.createEl('span', { text: heading, cls: 'charity-capture-refresh-value-label' });
+        cell.createSpan({ text: heading, cls: 'charity-capture-refresh-value-label' });
         cell.createEl('p', { text: heading === 'Captured' && !field.available ? 'Unavailable - existing information will be kept' : displayValue(value) });
       }
       if (field.available && !field.changed) row.createEl('p', { text: 'No change', cls: 'charity-hint' });

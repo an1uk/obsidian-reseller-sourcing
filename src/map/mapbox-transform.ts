@@ -15,14 +15,14 @@ export function isMapboxURL(url: string): boolean {
 export function transformMapboxStyle(style: StyleSpecification, accessToken: string): StyleSpecification {
 	// Remove unsupported projection.name property
 	if (style.projection && 'name' in style.projection) {
-		delete (style.projection as { name?: unknown }).name;
+		delete style.projection.name;
 	}
 
 	// Transform sources. Only some source types carry a url, so narrow to that.
 	if (style.sources) {
 		for (const sourceId in style.sources) {
-			const source = style.sources[sourceId] as { url?: string };
-			if (source.url && isMapboxURL(source.url)) {
+			const source = style.sources[sourceId];
+			if ('url' in source && typeof source.url === 'string' && source.url && isMapboxURL(source.url)) {
 				source.url = transformMapboxUrl(source.url, 'Source', accessToken) ?? source.url;
 			}
 		}

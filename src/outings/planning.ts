@@ -4,7 +4,7 @@ import type { JourneyEstimate, OutingGroup, OutingOptimisationPreview, OutingPla
 
 const MINUTE = 60_000, DAY = 86_400_000;
 const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const cleanPath = (path: string): string => path.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0]!.replace(/\.md$/i, '');
+const cleanPath = (path: string): string => path.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0].replace(/\.md$/i, '');
 const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])) : value;
 const finite = (value: unknown, min: number, max: number, label: string): number => {
@@ -72,7 +72,7 @@ export function resolvePlanningAnchor(anchor: PlanningAnchor | null, places: rea
   if (!anchor) return null;
   if (anchor.kind === 'coordinates') return validateCoordinates(anchor.coordinates);
   const matches = places.filter(place => cleanPath(place.path) === cleanPath(anchor.path));
-  return matches.length === 1 ? validateCoordinates(matches[0]!.coordinates) : null;
+  return matches.length === 1 ? validateCoordinates(matches[0].coordinates) : null;
 }
 function formatter(zone: string): Intl.DateTimeFormat {
   return new Intl.DateTimeFormat('en-GB', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
@@ -83,11 +83,11 @@ function localParts(epoch: number, format: Intl.DateTimeFormat): number[] {
 }
 /** Find every instant for a wall time: zero means DST gap, two means overlap. */
 export function planningWallTimeInstants(date: string, time: string, zone: string): number[] {
-  const format = formatter(zone), target = [...date.split('-').map(Number), ...time.split(':').map(Number)], guess = Date.UTC(target[0]!, target[1]! - 1, target[2]!, target[3]!, target[4]!);
+  const format = formatter(zone), target = [...date.split('-').map(Number), ...time.split(':').map(Number)], guess = Date.UTC(target[0], target[1] - 1, target[2], target[3], target[4]);
   const offsets = new Set<number>();
   for (let delta = -36; delta <= 36; delta += 3) {
     const epoch = guess + delta * 3_600_000, parts = localParts(epoch, format);
-    offsets.add(Date.UTC(parts[0]!, parts[1]! - 1, parts[2]!, parts[3]!, parts[4]!) - epoch);
+    offsets.add(Date.UTC(parts[0], parts[1] - 1, parts[2], parts[3], parts[4]) - epoch);
   }
   return [...offsets].map(offset => guess - offset).filter(epoch => localParts(epoch, format).every((part, index) => part === target[index])).sort((a, b) => a - b);
 }
@@ -109,14 +109,14 @@ function clockMinutes(text: string): number | null {
 export function parsePlanningHours(rows: readonly string[], day: string): DayHours {
   const matches = rows.filter(row => new RegExp('^' + day + '\\b', 'i').test(row.trim()));
   if (matches.length !== 1) return { known: false, intervals: [] };
-  const raw = matches[0]!.trim().replace(new RegExp('^' + day + '\\s*[:,]?\\s*', 'i'), '').replace(/[\u00a0\u202f]/g, ' ').trim();
+  const raw = matches[0].trim().replace(new RegExp('^' + day + '\\s*[:,]?\\s*', 'i'), '').replace(/[\u00a0\u202f]/g, ' ').trim();
   if (/^closed$/i.test(raw)) return { known: true, intervals: [] };
   if (/^(?:open\s+)?24\s+hours?$/i.test(raw)) return { known: true, intervals: [{ open: 0, close: 1440 }] };
   const pieces = raw.split(/\s*(?:,|;|\band\b)\s*/i), intervals: DayHours['intervals'] = [];
   for (const piece of pieces) {
     const pair = piece.split(/\s*(?:[\u2010-\u2015-]|\bto\b)\s*/i);
     if (pair.length !== 2) return { known: false, intervals: [] };
-    const open = clockMinutes(pair[0]!), close = clockMinutes(pair[1]!);
+    const open = clockMinutes(pair[0]), close = clockMinutes(pair[1]);
     if (open === null || close === null || open >= 1440 || open === close) return { known: false, intervals: [] };
     intervals.push({ open, close: close <= open ? close + 1440 : close });
   }
@@ -127,7 +127,7 @@ function epochAtMinute(date: string, minute: number, zone: string): number | nul
   const next = adjacentDate(date, Math.floor(minute / 1440)), within = minute % 1440;
   const time = String(Math.floor(within / 60)).padStart(2, '0') + ':' + String(within % 60).padStart(2, '0');
   const values = planningWallTimeInstants(next, time, zone);
-  return values.length === 1 ? values[0]! : null;
+  return values.length === 1 ? values[0] : null;
 }
 function hoursFor(stop: OutingStop, hours: Record<string, PlanningHours>, options: OutingPlanningOptions): SourceHours {
   const override = options.stopOverrides[stop.id]?.hours, captured = hours[stop.sourcePath] ?? { hours: [], hoursChecked: '' };
@@ -136,8 +136,8 @@ function hoursFor(stop: OutingStop, hours: Record<string, PlanningHours>, option
     const open = Number(interval.open.slice(0, 2)) * 60 + Number(interval.open.slice(3));
     let close = Number(interval.close.slice(0, 2)) * 60 + Number(interval.close.slice(3)); if (close <= open) close += 1440;
     return { open, close };
-  }) } : parsePlanningHours(captured.hours, dayNames[weekday]!);
-  const previous = override ? { known: false, intervals: [] } : parsePlanningHours(captured.hours, dayNames[(weekday + 6) % 7]!);
+  }) } : parsePlanningHours(captured.hours, dayNames[weekday]);
+  const previous = override ? { known: false, intervals: [] } : parsePlanningHours(captured.hours, dayNames[(weekday + 6) % 7]);
   const intervals: SourceHours['intervals'] = [];
   let known = today.known;
   for (const row of [{ date, hours: today, prior: false }, { date: adjacentDate(date, -1), hours: previous, prior: true }]) {
@@ -152,7 +152,7 @@ function hoursFor(stop: OutingStop, hours: Record<string, PlanningHours>, option
 }
 const cloneGroups = (groups: readonly OutingGroup[]): OutingGroup[] => groups.map(group => ({ ...group, stops: group.stops.map(stop => ({ ...stop })) }));
 const frozenGroup = (group: OutingGroup): boolean => group.stops.some(stop => stop.status !== 'pending');
-const fillPending = <T>(original: T[], pending: T[], frozen: (item: T) => boolean): T[] => { let index = 0; return original.map(item => frozen(item) ? item : pending[index++]!); };
+const fillPending = <T>(original: T[], pending: T[], frozen: (item: T) => boolean): T[] => { let index = 0; return original.map(item => frozen(item) ? item : pending[index++]); };
 function emptyEstimate(startAt = NaN): JourneyEstimate { return { drivingKm: 0, walkingKm: 0, totalKm: 0, totalMinutes: 0, waitingMinutes: 0, openingConflicts: 0, unconfirmedHours: 0, startAt, finishAt: startAt, latestFinishMissed: false, timeline: [] }; }
 export function buildOutingOptimisationPreview(record: OutingRecord, places: readonly PlaceRecord[], hours: Record<string, PlanningHours>, input: OutingPlanningOptions): OutingOptimisationPreview {
   const options = validatePlanningOptions(input), warnings: string[] = [], blockers: string[] = [], groups = cloneGroups(record.groups);
@@ -236,7 +236,7 @@ export function buildOutingOptimisationPreview(record: OutingRecord, places: rea
       : [estimate.openingConflicts, estimate.latestFinishMissed ? 1 : 0, estimate.totalKm, estimate.waitingMinutes, estimate.finishAt];
     const better = (a: JourneyEstimate, b: JourneyEstimate): boolean => {
       const x = score(a), y = score(b);
-      for (let i = 0; i < x.length; i++) { if (Math.abs(x[i]! - y[i]!) < 1e-8) continue; return x[i]! < y[i]!; } return false;
+      for (let i = 0; i < x.length; i++) { if (Math.abs(x[i] - y[i]) < 1e-8) continue; return x[i] < y[i]; } return false;
     };
     let budget = 700;
     const consider = (candidate: OutingGroup[]): boolean => {
@@ -268,14 +268,14 @@ export function buildOutingOptimisationPreview(record: OutingRecord, places: rea
       let improved = false;
       const movable = best.map((group, index) => !frozenGroup(group) ? index : -1).filter(index => index >= 0);
       for (let i = 0; i < movable.length && budget > 0; i++) for (let j = i + 1; j < movable.length && budget > 0; j++) {
-        const candidate = cloneGroups(best), selected = movable.slice(i, j + 1), reversed = selected.map(index => candidate[index]!).reverse();
+        const candidate = cloneGroups(best), selected = movable.slice(i, j + 1), reversed = selected.map(index => candidate[index]).reverse();
         selected.forEach((index, k) => { candidate[index] = reversed[k]!; }); improved = consider(candidate) || improved;
       }
       for (let gi = 0; gi < best.length && budget > 0; gi++) {
-        const positions = best[gi]!.stops.map((stop, index) => stop.status === 'pending' ? index : -1).filter(index => index >= 0);
+        const positions = best[gi].stops.map((stop, index) => stop.status === 'pending' ? index : -1).filter(index => index >= 0);
         for (let i = 0; i < positions.length && budget > 0; i++) for (let j = i + 1; j < positions.length && budget > 0; j++) {
-          const candidate = cloneGroups(best), stops = candidate[gi]!.stops, a = positions[i]!, b = positions[j]!;
-          [stops[a], stops[b]] = [stops[b]!, stops[a]!]; improved = consider(candidate) || improved;
+          const candidate = cloneGroups(best), stops = candidate[gi].stops, a = positions[i], b = positions[j];
+          [stops[a], stops[b]] = [stops[b], stops[a]]; improved = consider(candidate) || improved;
         }
       }
       if (!improved) break;

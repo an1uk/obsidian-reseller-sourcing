@@ -61,7 +61,7 @@ function nearest<T>(items: T[], origin: Coordinates, coordinates: (item: T) => C
 }
 function fillPending<T>(original: T[], pending: T[], frozen: (item: T) => boolean): T[] {
   let index = 0;
-  return original.map(item => frozen(item) ? item : pending[index++]!);
+  return original.map(item => frozen(item) ? item : pending[index++]);
 }
 
 /** Straight-line nearest-next proposal, retaining groups with recorded progress at their indices. */
@@ -116,9 +116,9 @@ export function extractSourceContext(text: string): SourceContext {
   const entries = [...log.matchAll(/^###[ \t]+([^\n]+)\n/gm)];
   const reminders: { recorded: string; date: string; text: string; position: number }[] = [];
   for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i]!, recorded = entry[1]!.trim();
+    const entry = entries[i], recorded = entry[1].trim();
     if (!/^\d{4}-\d{2}-\d{2} (?:[01]\d|2[0-3]):[0-5]\d$/.test(recorded) || !validDate(recorded.slice(0, 10))) continue;
-    const content = log.slice(entry.index! + entry[0].length, entries[i + 1]?.index ?? log.length);
+    const content = log.slice(entry.index + entry[0].length, entries[i + 1]?.index ?? log.length);
     const visit = /^[ \t\n]*Visit date: (\d{4}-\d{2}-\d{2})[ \t]*(?:\n|$)/.exec(content);
     const date = validDate(visit?.[1]); if (!date) continue;
     const next = /^\*\*Next time\*\*[ \t]*\n/m.exec(content); if (!next) continue;

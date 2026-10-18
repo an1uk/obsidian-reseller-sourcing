@@ -1,6 +1,6 @@
 {
   "name": "charity-sourcing",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "private": true,
   "description": "Local reseller sourcing notebook for Obsidian",
   "license": "MIT",
@@ -21,18 +21,27 @@
     "check": "tsc --noEmit",
     "build": "npm run check && node esbuild.config.mjs",
     "test": "node --import tsx --test tests/*.test.ts",
-    "package": "npm run build && node scripts/package.mjs"
+    "package": "npm run build && node scripts/package.mjs",
+    "lint:source": "eslint src package.json manifest.json --max-warnings 0",
+    "lint:css": "stylelint map.css ui.css visit-insights.css --max-warnings 0",
+    "lint": "npm run lint:source && npm run lint:css"
   },
   "dependencies": {
-    "@mapbox/mapbox-gl-rtl-text": "0.3.0",
     "maplibre-gl": "6.14.0"
   },
   "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@eslint/json": "0.14.0",
     "@types/node": "24.6.1",
     "esbuild": "0.25.10",
+    "eslint": "9.39.5",
+    "eslint-plugin-obsidianmd": "0.4.2",
     "obsidian": "https://codeload.github.com/obsidianmd/obsidian-api/tar.gz/9abd9605ce081383674aae1ed111c456edde0688",
+    "stylelint": "17.16.0",
+    "stylelint-config-obsidianmd": "0.1.0",
     "tsx": "4.20.6",
     "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2",
     "yaml": "2.9.1"
   }
 }

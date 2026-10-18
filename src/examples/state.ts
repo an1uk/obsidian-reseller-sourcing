@@ -7,6 +7,9 @@ import { hashText } from '../storage/markdown';
 import { SourcingStore } from '../storage/store';
 import { MutationCoordinator } from '../storage/coordinator';
 import { buildExamplePack, EXAMPLES_PACK_VERSION } from './pack';
+import { hasControlCharacters } from '../domain/guards';
+import { parseSettings } from '../platform/settings-data';
+import { notebookFiles } from '../storage/files';
 
 export const EXAMPLES_STATE_FORMAT = 'reseller-sourcing-examples';
 export const examplesRoot = (liveRoot: string): string => validateRootPath(liveRoot) + '/Examples';
@@ -26,14 +29,11 @@ export interface ExamplesSession {
 const fileLike = (value: unknown): value is TFile => !!value && typeof value === 'object' && 'extension' in value;
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const inside = (path: unknown, root: string): path is string => typeof path === 'string' && path.startsWith(root + '/') &&
-  !/[\\\x00-\x1f]/.test(path) && !path.split('/').some(part => !part || part === '.' || part === '..');
+  !path.includes('\\') && !hasControlCharacters(path, false) && !path.split('/').some(part => !part || part === '.' || part === '..');
 const hash = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 function checkedSettings(value: unknown, root: string): Settings {
   if (!object(value) || value.root !== root) throw new Error('The practice state belongs to a different folder.');
-  const settings = structuredClone(DEFAULT_SETTINGS);
-  for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) if (Object.hasOwn(value, key)) (settings as unknown as Record<string, unknown>)[key] = structuredClone(value[key]);
-  settings.distanceUnit = normaliseDistanceUnit(settings.distanceUnit);
-  if (Object.hasOwn(value, 'migration')) settings.migration = structuredClone(value.migration) as Settings['migration'];
+  const settings = parseSettings(value);
   if (!Number.isFinite(settings.suggestionKm) || !Array.isArray(settings.tileSets) || !Array.isArray(settings.sourceTypes) ||
     settings.sourceTypes.some(type => typeof type !== 'string' || !type.trim()) || typeof settings.defaultSourceType !== 'string' ||
     !object(settings.assets) || !object(settings.captureReceipts) || !object(settings.captureSnapshots) ||
@@ -59,10 +59,12 @@ function checkedSettings(value: unknown, root: string): Settings {
 export function parseExamplesState(raw: string, root: string): ExamplesState {
   const data: unknown = JSON.parse(raw);
   if (!object(data) || data.format !== EXAMPLES_STATE_FORMAT || data.schema !== 1 || typeof data.instanceId !== 'string' || !data.instanceId ||
-    !Number.isSafeInteger(data.packVersion) || !['installing', 'ready'].includes(String(data.phase)) || !object(data.files) ||
+    typeof data.packVersion !== 'number' || !Number.isSafeInteger(data.packVersion) || data.phase !== 'installing' && data.phase !== 'ready' || !object(data.files) ||
     Object.entries(data.files).some(([path, digest]) => !inside(path, root) || !hash(digest))) throw new Error('This Examples state is invalid or uses an unsupported format.');
-  return { format: EXAMPLES_STATE_FORMAT, schema: 1, instanceId: data.instanceId, packVersion: data.packVersion as number,
-    phase: data.phase as ExamplesState['phase'], settings: checkedSettings(data.settings, root), files: data.files as Record<string, string> };
+  const files: Record<string, string> = {};
+  for (const [path, digest] of Object.entries(data.files)) if (typeof digest === 'string') files[path] = digest;
+  return { format: EXAMPLES_STATE_FORMAT, schema: 1, instanceId: data.instanceId, packVersion: data.packVersion,
+    phase: data.phase, settings: checkedSettings(data.settings, root), files };
 }
 export function encodeExamplesState(state: ExamplesState): string { return JSON.stringify(state, null, 2) + '\n'; }
 /** The parent move owns this state-file edit and backs it up alongside every practice file. */
@@ -98,7 +100,7 @@ export class ExamplesManager {
   async inspect(): Promise<ExamplesStatus> {
     const root = this.root, path = examplesStatePath(root), file = this.stateFile(root);
     if (!file) {
-      const occupied = this.app.vault.getAbstractFileByPath(root) && this.app.vault.getFiles().some(file => file.path.startsWith(root + '/'));
+      const occupied = this.app.vault.getAbstractFileByPath(root) && notebookFiles(this.app.vault, root).length > 0;
       return { state: occupied ? 'conflict' : 'missing', root, path, message: occupied ? 'Examples already contains files without a recognised practice state. Nothing will be overwritten.' : 'Examples have not been added. Add examples creates a separate fictional practice notebook.' };
     }
     try {
@@ -128,7 +130,7 @@ export class ExamplesManager {
       const partialState = status.state === 'partial' ? parseExamplesState(await this.app.vault.read(this.stateFile(root)!), root) : null;
       const pack = await buildExamplePack(root, this.app.vault.getName(), partialState?.packVersion ?? EXAMPLES_PACK_VERSION);
       if (Object.keys(pack.files).some(path => !inside(path, root) || path === examplesStatePath(root))) throw new Error('The example pack contains an unsafe path.');
-      const expected = Object.fromEntries(await Promise.all(Object.entries(pack.files).map(async ([path, text]) => [path, await hashText(text)])));
+      const expected = Object.fromEntries(await Promise.all(Object.entries(pack.files).map(async ([path, text]): Promise<[string, string]> => [path, await hashText(text)])));
       let state: ExamplesState, raw: string;
       if (status.state === 'partial') {
         const existing = this.stateFile(root)!; raw = await this.app.vault.read(existing); state = parseExamplesState(raw, root);

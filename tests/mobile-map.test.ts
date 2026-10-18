@@ -29,7 +29,7 @@ export class Map {constructor(options){this.options=options;this.handlers={};thi
  off(event,fn){this.handlers[event]=(this.handlers[event]??[]).filter(handler=>handler!==fn);return this}
  emit(event,value={}){for(const fn of this.handlers[event]??[])fn(value)}
  addControl(control){return this} remove(){this.removed=true}
- getCenter(){return this.center} getZoom(){return this.zoom} getCanvas(){return this.canvas}
+ getCenter(){return this.center} getZoom(){return this.zoom} getCanvas(){return this.canvas} getContainer(){return this.options.container}
  project(value){return {x:value[0],y:value[1]}} setCenter(value){this.center={lng:value[0],lat:value[1]}} setZoom(value){this.zoom=value}
  flyTo(options){this.flown=options} setStyle(){} isStyleLoaded(){return true} resize(){}
 }
@@ -41,17 +41,19 @@ export async function setRTLTextPlugin(){}
 `;
 class Element {
   children:Element[]=[]; parentElement:Element|null=null; tagName:string; className=''; textContent=''; attributes:Record<string,string>={};
-  style:any={setProperty(){}}; listeners:Record<string,Array<(event:any)=>void>>={}; ownerDocument:any; win=globalThis; value=''; rows=0;
+  style:any={setProperty(){},removeProperty(){}}; listeners:Record<string,Array<(event:any)=>void>>={}; ownerDocument:any; win=globalThis; value=''; rows=0; isConnected=true;
   constructor(tag='div',doc:any=undefined){this.tagName=tag;this.ownerDocument=doc??documentFixture();}
   createEl(tag:string,options:any={}){const el=new Element(tag,this.ownerDocument);el.parentElement=this;el.textContent=options.text??'';el.className=options.cls??'';el.attributes={...(options.attr??{})};this.children.push(el);return el}
   createDiv(options:any=''){return this.createEl('div',typeof options==='string'?{cls:options}:options)}
   createSpan(options:any=''){return this.createEl('span',typeof options==='string'?{cls:options}:options)}
   createSvg(tag:string,options:any){return this.createEl(tag,options)}
+  appendChild(el:Element){el.remove();this.children.push(el);el.parentElement=this;return el}
   setText(text:string){this.children=[];this.textContent=text} empty(){this.children=[];this.textContent=''}
   setAttribute(key:string,value:string){this.attributes[key]=value} getAttribute(key:string){return this.attributes[key]??null}
   addClass(value:string){this.className+=' '+value} removeClass(value:string){this.className=this.className.replace(value,'')} toggleClass(value:string,on:boolean){on?this.addClass(value):this.removeClass(value)}
   setCssProps(){} setCssStyles(){} remove(){this.parentElement?.children.splice(this.parentElement.children.indexOf(this),1)} detach(){this.remove()}
-  focus(){} select(){} addEventListener(type:string,fn:(event:any)=>void){(this.listeners[type]??=[]).push(fn)}
+  focus(){this.ownerDocument.activeElement=this} select(){} addEventListener(type:string,fn:(event:any)=>void){(this.listeners[type]??=[]).push(fn)}
+  instanceOf(type:any){return this instanceof type}
   removeEventListener(type:string,fn:(event:any)=>void){this.listeners[type]=(this.listeners[type]??[]).filter(value=>value!==fn)}
   click(){for(const fn of this.listeners.click??[])fn({preventDefault(){},stopPropagation(){}})}
   querySelector(selector:string):Element|null {return this.children.find(el=>el.tagName===selector)??this.children.map(el=>el.querySelector(selector)).find(Boolean)??null}
@@ -59,7 +61,7 @@ class Element {
 }
 function documentFixture(){
   const listeners:Record<string,Array<()=>void>>={};
-  const doc:any={hidden:false,createElement:(tag:string)=>new Element(tag,doc),addEventListener:(event:string,fn:()=>void)=>{(listeners[event]??=[]).push(fn)},removeEventListener:(event:string,fn:()=>void)=>{listeners[event]=(listeners[event]??[]).filter(item=>item!==fn)},emit:(event:string)=>{for(const fn of listeners[event]??[])fn()}};
+  const doc:any={hidden:false,adoptNode:(el:Element)=>{el.ownerDocument=doc;return el},createElement:(tag:string)=>new Element(tag,doc),addEventListener:(event:string,fn:()=>void)=>{(listeners[event]??=[]).push(fn)},removeEventListener:(event:string,fn:()=>void)=>{listeners[event]=(listeners[event]??[]).filter(item=>item!==fn)},emit:(event:string)=>{for(const fn of listeners[event]??[])fn()}};
   return doc;
 }
 async function load(source:string){
@@ -68,7 +70,9 @@ async function load(source:string){
     build.onLoad({filter:/.*/,namespace:'mobile-test'},args=>({contents:args.path==='obsidian'?obsidian:libre,loader:'js'}));
   }}]});
   (globalThis as any).__element=()=>new Element();
+  (globalThis as any).HTMLElement=Element;
   (globalThis as any).createDiv=(cls:string)=>{const el=new Element();el.className=cls;return el};
+  (globalThis as any).createEl=(tag:string,options:any={})=>{const el=new Element(tag);el.className=options.cls??'';return el};
   (globalThis as any).__request=async()=>({status:200,json:{version:8,sources:{},layers:[]}});
   (globalThis as any).__maps=[];(globalThis as any).__popups=[];(globalThis as any).__markers=[];
   return import('data:text/javascript;base64,'+Buffer.from(result.outputFiles[0]!.text).toString('base64'));
@@ -92,12 +96,15 @@ test('mobile Base marker taps persist, expose Open note and close button; deskto
   manager.setMap(map);manager.markers=[{entry,coordinates:[100,100]}];manager.setupMarkerInteractions();
   (globalThis as any).__opened='';
   map.emit('click',{point:{x:119,y:110},originalEvent:{},preventDefault(){}});
-  const opened=(globalThis as any).__popups.at(-1);
-  assert.equal(opened.options.closeButton,true);assert.equal(opened.open,true);assert.equal((globalThis as any).__opened,'');
-  assert.ok(opened.content.find('Google Maps'));opened.content.find('Open note').click();
+  const opened=root.children.find(el=>el.className==='charity-map-touch-popup')!;
+  assert.ok(opened);assert.equal((globalThis as any).__popups.length,0,'touch sheets never inherit MapLibre inline positioning');assert.equal((globalThis as any).__opened,'');
+  assert.ok(opened.find('Close'));assert.equal(opened.attributes.role,'dialog');
+  assert.ok(opened.find('Google Maps'));opened.find('Open note')!.click();
   assert.equal((globalThis as any).__opened,entry.file.path);
-  popup.hidePopup();await new Promise(resolve=>setTimeout(resolve,180));assert.equal(opened.open,true);
-  popup.destroy();assert.equal(opened.open,false);
+  popup.hidePopup();await new Promise(resolve=>setTimeout(resolve,180));assert.ok(root.children.includes(opened));
+  opened.find('Close')!.click();assert.ok(!root.children.includes(opened),'explicit close dismisses persistent touch details');
+  map.emit('click',{point:{x:119,y:110},originalEvent:{},preventDefault(){}});
+  popup.destroy();assert.equal(root.children.filter(el=>el.className==='charity-map-touch-popup').length,0);
   m.Platform.isMobileApp=false;
   const desktop=new m.MarkerManager(currentApp,root,popup,(path:string)=>(globalThis as any).__opened=path,()=>({properties:[]}),()=>({coordinatesProp:'note.coordinates'}),(prop:string)=>prop);
   desktop.setMap(map);desktop.markers=[{entry,coordinates:[100,100]}];desktop.setupMarkerInteractions();
@@ -105,6 +112,37 @@ test('mobile Base marker taps persist, expose Open note and close button; deskto
   map.emit('click:marker-pins',{features:[{properties:{entryIndex:0}}],originalEvent:{}});
   assert.equal((globalThis as any).__opened,entry.file.path);
   m.Platform.isMobileApp=true;
+});
+
+test('touch popup focuses its close control, supports Escape and restores the triggering window focus',async()=>{
+  const m=await load(`export {MobileMapPopup} from './src/map/mobile-popup';`);
+  const doc=documentFixture(),root=new Element('div',doc),trigger=root.createEl('button',{text:'Shop pin'});
+  trigger.focus();
+  const popup=new m.MobileMapPopup(root),content=new Element('div',doc);
+  content.createEl('a',{text:'Preview directions'});
+  popup.open(content,'Fictional place',trigger);
+  const overlay=root.children.find(el=>el.className==='charity-map-touch-popup')!;
+  const close=overlay.find('Close')!;
+  assert.equal(doc.activeElement,close);assert.equal(overlay.attributes['aria-modal'],'false');
+  assert.equal(content.parentElement,overlay);
+  let prevented=false;
+  overlay.listeners.keydown[0]({key:'Escape',preventDefault(){prevented=true},stopPropagation(){}});
+  assert.equal(prevented,true);assert.equal(doc.activeElement,trigger);assert.ok(!root.children.includes(overlay));
+  popup.destroy();
+});
+
+test('inline touch markers use the same bounded popup and fictional navigation remains a preview',async()=>{
+  const m=await load(`export {PlaceMap} from './src/map/place-map';`);
+  const root=new Element(),external:unknown[]=[];
+  const host={app:app(),mode:'examples',settings:{root:'Notebook/Examples',tileSets:[]},openParking(){},confirmMove(){},openExternal:(...args:unknown[])=>external.push(args)};
+  const record={path:'Notebook/Examples/Places/Exampletown/Fictional shop.md',name:'Fictional shop',kind:'shop',coordinates:[12,34],properties:{rating:3.5,google_maps_url:'https://www.google.com/maps/place/Fictional+shop',comments:'The coat had a promising label and an unpromising zip'}};
+  const place=new m.PlaceMap(root,host,{records:[record]});await place.initialize();
+  const marker=(globalThis as any).__markers.at(-1);marker.options.element.click();
+  assert.equal((globalThis as any).__popups.length,0);
+  const popup=root.children[0].children.find(el=>el.className==='charity-map-touch-popup')!;
+  assert.ok(popup);popup.find('Preview Google Maps')!.click();await tick();
+  assert.equal(external.length,1);assert.equal((external[0] as unknown[])[1],'Google Maps');
+  popup.find('Close')!.click();assert.equal(root.find('Close'),undefined);place.onunload();
 });
 
 test('location starts only on tap, stops when backgrounded or removed and ignores old fixes',async()=>{
@@ -169,6 +207,20 @@ test('Base WebGL failure exposes retry without removing the query table',async()
     const view=new m.MapView({app:currentApp,config},root,{app:currentApp,settings:{root:'Reseller sourcing',tileSets:[]}});await view.initializeMap();
     const first=(globalThis as any).__maps.at(-1);first.center={lng:3,lat:4};first.zoom=12;first.emit('webglcontextlost');
     assert.ok(root.find('Retry map'));await view.retryMap();assert.equal(first.removed,true);assert.equal(root.children.length,1);assert.equal(view.disposed,false);
+    view.onunload();
+  }finally{delete (String as any).isString;delete (Number as any).isNumber}
+});
+
+test('a rejected Base background change is caught and offers a visible retry',async()=>{
+  const m=await load(`export {MapView} from './src/map/base-view';`);
+  (String as any).isString=(v:unknown)=>typeof v==='string';(Number as any).isNumber=(v:unknown)=>typeof v==='number';
+  try{
+    const currentApp=app(),root=new Element(),config={get:()=>null,getAsPropertyId:()=>null,getEvaluatedFormula:()=>null,set(){}};
+    const view=new m.MapView({app:currentApp,config},root,{app:currentApp,settings:{root:'Reseller sourcing',tileSets:[]}});await view.initializeMap();
+    const map=(globalThis as any).__maps.at(-1);map.setStyle=()=>{throw Error('Invalid replacement background')};
+    await assert.doesNotReject(()=>view.updateMapStyle());
+    assert.ok(root.find('Retry map'));assert.equal(map.removed,undefined,'background errors preserve the current map and notes');
+    view.onThemeChange();await tick();assert.ok(root.find('Retry map'));
     view.onunload();
   }finally{delete (String as any).isString;delete (Number as any).isNumber}
 });

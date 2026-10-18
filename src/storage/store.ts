@@ -1,3 +1,6 @@
+import { hasControlCharacters, isRecord, isUnknownArray } from '../domain/guards';
+import { notebookFiles } from './files';
+import { propertyText } from '../domain/guards';
 import { VisitStore } from '../visits/store';
 import { PreparationStore } from '../workspace/drafts';
 import { NotebookPaths } from './paths';
@@ -14,7 +17,7 @@ import type { AreaHint, AreaSelection, CaptureSaveOptions, CaptureDraft, Coordin
 import { CLIPPER_TEMPLATE_RELEASE, createClipperTemplates, normalizeAreaPhrase, parseCapture } from '../capture';
 import { canonicalPlaceIdentity, isGoogleMapsUrl, safeFileName, validateCoordinates, validateRootPath, websiteUrl } from '../domain';
 import { ASSET_VERSION, baseText, bodyForPlace, bundledAssets, placeProperties } from './assets';
-import { appendVisit, hashText, linkPath, readNote, updateNoteProperty, wiki, writeNote } from './markdown';
+import { hashText, linkPath, readNote, updateNoteProperty, wiki, writeNote } from './markdown';
 import { localitySubtree, resolveLocalities, validLocalityName } from '../domain/hierarchy';
 import { executeMove, migrationEligible, prepareMove, rewriteLinks, rollbackMove as recoverMove, stripCodexMarkers, validateMovePreview } from './migration';
 
@@ -55,7 +58,7 @@ export class SourcingStore {
     return this.coordinator.run(async () => { this.writable(); await this.options.assertWritable?.(); return fn(); });
   }
   scoped(path: string): boolean { return path.startsWith(this.root + '/') && (this.mode === 'examples' || !path.startsWith(this.root + '/Examples/')) && !path.split('/').some(p => p === '..' || p === '.'); }
-  private guard(path: string): void { this.options.assertCurrent?.(); if (!this.scoped(path) || /[\\\x00-\x1f]/.test(path)) throw new Error('Path is outside Reseller sourcing.'); }
+  private guard(path: string): void { this.options.assertCurrent?.(); if (!this.scoped(path) || (path.includes('\\') || hasControlCharacters(path, false))) throw new Error('Path is outside Reseller sourcing.'); }
   private file(path: string): TFile {
     this.guard(path); const file = this.app.vault.getAbstractFileByPath(path);
     if (!isFile(file)) throw new Error('Note no longer exists: ' + path); return file;
@@ -73,9 +76,10 @@ export class SourcingStore {
   }
   private contextBase(text: string, path: string): string {
     if (this.mode !== 'examples') return text;
-    const document = parseYaml(text) as { views?: Record<string, unknown>[]; filters?: { and?: string[] } };
-    if (document.filters?.and) document.filters.and = [...document.filters.and.filter(filter => filter !== 'note.sourcing_example != true'), 'note.sourcing_example == true'];
-    for (const view of document.views ?? []) { view.notebookRoot = this.root; view.notebookBasePath = path; }
+    const document: unknown = parseYaml(text);
+    if (!isRecord(document) || !isUnknownArray(document.views) || !document.views.every(isRecord) || !isRecord(document.filters) || !isUnknownArray(document.filters.and) || !document.filters.and.every(filter => typeof filter === 'string')) throw Error('The generated practice Base has invalid settings.');
+    document.filters.and = [...document.filters.and.filter(filter => filter !== 'note.sourcing_example != true'), 'note.sourcing_example == true'];
+    for (const view of document.views) { view.notebookRoot = this.root; view.notebookBasePath = path; }
     return stringifyYaml(document, { lineWidth: 0 });
   }
   private moveOptions(): { rawCaptureRoots: string[]; opaqueSubtrees?: string[]; ignoredPaths?: string[]; writeBoundary?: string } {
@@ -96,11 +100,11 @@ export class SourcingStore {
         value = JSON.stringify(valid);
       }
       await this.app.vault.process(this.file(path), text => {
-        const document = parseYaml(text) as { views?: Record<string, unknown>[] };
-        if (!document || !Array.isArray(document.views)) throw new Error('This Base has invalid views.');
+        const document: unknown = parseYaml(text);
+        if (!isRecord(document) || !isUnknownArray(document.views) || !document.views.every(isRecord)) throw new Error('This Base has invalid views.');
         const views = document.views.filter(view => view.name === viewName);
-        if (views.length !== 1 || views[0]!.notebookRoot !== this.root || views[0]!.notebookBasePath !== path) throw new Error('This map no longer belongs to the practice notebook.');
-        views[0]![key] = value;
+        if (views.length !== 1 || views[0].notebookRoot !== this.root || views[0].notebookBasePath !== path) throw new Error('This map no longer belongs to the practice notebook.');
+        views[0][key] = value;
         return stringifyYaml(document, { lineWidth: 0 });
       });
     });
@@ -226,7 +230,7 @@ export class SourcingStore {
   }
   async listLocalities(): Promise<LocalityRecord[]> {
     const entries: { path: string; name: string; parentPath: string }[] = [];
-    const files = this.app.vault.getMarkdownFiles().filter(f => this.scoped(f.path) && (f.path.startsWith(this.paths.places + '/') || f.path.startsWith(this.root + '/Localities/')));
+    const files = notebookFiles(this.app.vault, this.root).filter(f => this.scoped(f.path) && (f.path.startsWith(this.paths.places + '/') || f.path.startsWith(this.root + '/Localities/')));
     for (const file of files) {
       try {
         const { properties } = readNote(await this.app.vault.read(file));
@@ -234,7 +238,7 @@ export class SourcingStore {
           let parentPath = linkPath(properties.parent_locality);
           if (parentPath && !parentPath.includes('/')) {
             const candidates = files.filter(f => f.basename === parentPath.replace(/\.md$/, ''));
-            if (candidates.length === 1) parentPath = candidates[0]!.path;
+            if (candidates.length === 1) parentPath = candidates[0].path;
           }
           entries.push({ path: file.path, name: typeof properties.area_name === 'string' ? properties.area_name : file.basename, parentPath });
         }
@@ -267,7 +271,7 @@ export class SourcingStore {
   }
   async listPlaces(): Promise<PlaceRecord[]> {
     const places: PlaceRecord[] = [];
-    for (const file of this.app.vault.getMarkdownFiles().filter(f => this.scoped(f.path) && (f.path.startsWith(this.paths.places + '/') || f.path.startsWith(this.root + '/Sources/') || f.path.startsWith(this.root + '/Shops/') || f.path.startsWith(this.root + '/Parking/')))) {
+    for (const file of notebookFiles(this.app.vault, this.root).filter(f => this.scoped(f.path) && (f.path.startsWith(this.paths.places + '/') || f.path.startsWith(this.root + '/Sources/') || f.path.startsWith(this.root + '/Shops/') || f.path.startsWith(this.root + '/Parking/')))) {
       try {
         const { properties: p } = readNote(await this.app.vault.read(file));
         if (this.mode === 'live' && p.sourcing_example === true) continue;
@@ -284,7 +288,8 @@ export class SourcingStore {
   }
   async captures(): Promise<TFile[]> {
     const result: TFile[] = [];
-    for (const file of this.app.vault.getMarkdownFiles().filter(f => this.isCapturePath(f.path))) {
+    const inboxes = [...new Set([this.root, ...this.settings.previousRoots])].flatMap(root => notebookFiles(this.app.vault, root + '/Capture inbox'));
+    for (const file of inboxes.filter(f => f.extension === 'md' && this.isCapturePath(f.path))) {
       try { const p = readNote(await this.app.vault.read(file)).properties; if (p.sourcing_capture === 1 && (this.mode === 'examples' || p.sourcing_example !== true)) result.push(file); } catch { /* Keep malformed captures available. */ }
     }
     return result.sort((a, b) => a.stat.ctime - b.stat.ctime);
@@ -382,14 +387,14 @@ export class SourcingStore {
         leaf = town;
       }
     }
-    const chain: LocalityRecord[] = [leaf!];
-    while (chain[0]!.parentPath) {
-      const parent = [...localities, ...missing].find(record => record.path === chain[0]!.parentPath);
+    const chain: LocalityRecord[] = [leaf];
+    while (chain[0].parentPath) {
+      const parent = [...localities, ...missing].find(record => record.path === chain[0].parentPath);
       if (!parent) throw new Error('The selected area has a missing parent.');
       chain.unshift(parent);
     }
     const creations = missing.map(record => record.path);
-    return { town: town!, leaf: leaf!, chain, missing, creations };
+    return { town: town, leaf: leaf, chain, missing, creations };
   }
   private async materializeArea(plan: AreaPlan): Promise<LocalityRecord> {
     for (const record of plan.chain) {
@@ -502,8 +507,8 @@ export class SourcingStore {
         if (fresh.fingerprint !== preview.fingerprint) throw new Error('The source changed. Refresh the comparison and review your selection before saving.');
         const patch = captureRefreshPatch(fresh, selectedFields), appliedAt = new Date().toISOString();
         const before = readNote(await this.app.vault.read(target)).properties;
-        const receipt: CaptureRefreshReceipt = { captureId: current.captureId, captureRevision: current.sourceRevision!, appliedAt,
-          fields: [...selectedFields], captureUrl: current.url, captureIdentity: canonicalPlaceIdentity(current.url), targetSourceCaptureId: String(before.source_capture_id || '') };
+        const receipt: CaptureRefreshReceipt = { captureId: current.captureId, captureRevision: current.sourceRevision, appliedAt,
+          fields: [...selectedFields], captureUrl: current.url, captureIdentity: canonicalPlaceIdentity(current.url), targetSourceCaptureId: propertyText(before.source_capture_id) };
         await this.refreshDraft(current);
         await this.app.vault.process(target, raw => {
           const properties = readNote(raw).properties;
@@ -534,7 +539,7 @@ export class SourcingStore {
         await this.applyCaptureChoices(saved, options); await this.archiveCapture(draft); return this.file(receipt);
       }
       const matching = places.filter(p => p.properties.source_capture_id === draft.captureId);
-      if (matching.length > 1 || (matching.length === 1 && matching[0]!.kind !== draft.kind)) throw new Error('The capture matches conflicting saved records. Inspect them before retrying.');
+      if (matching.length > 1 || (matching.length === 1 && matching[0].kind !== draft.kind)) throw new Error('The capture matches conflicting saved records. Inspect them before retrying.');
       const prior = matching[0];
       if (prior) { this.settings.captureReceipts[draft.captureId] = prior.path; await this.applyCaptureChoices(prior, options); await this.archiveCapture(draft); return this.file(prior.path); }
       const contacts = this.contactValues(draft);
@@ -599,7 +604,7 @@ export class SourcingStore {
       let url: URL; try { url = new URL(draft.url); } catch { throw Error('Use a valid Google Maps link, or leave it blank.'); }
       if (!isGoogleMapsUrl(draft.url) && !(url.protocol === 'https:' && (url.hostname === 'maps.app.goo.gl' || url.hostname === 'goo.gl' && url.pathname.startsWith('/maps/')))) throw Error('Use a Google Maps listing or shared link.');
       const id = canonicalPlaceIdentity(draft.url);
-      if ((await this.listPlaces()).some(p => p.properties.source_capture_id !== draft.captureId && p.kind === draft.kind && (p.properties.google_maps_url === draft.url || id && canonicalPlaceIdentity(String(p.properties.google_maps_url ?? '')) === id))) throw Error('This Google listing already has a note. Update that note instead.');
+      if ((await this.listPlaces()).some(p => p.properties.source_capture_id !== draft.captureId && p.kind === draft.kind && (p.properties.google_maps_url === draft.url || id && canonicalPlaceIdentity(propertyText(p.properties.google_maps_url)) === id))) throw Error('This Google listing already has a note. Update that note instead.');
     }
     if (safeFileName(filename) !== filename || !filename || filename.length > 180) throw Error('Choose a valid filename.');
     if (filename.toLowerCase() === 'area') throw Error('Area.md is reserved for the area record. Choose a different filename.');
@@ -676,7 +681,7 @@ export class SourcingStore {
     return this.serial(async () => {
       const places = await this.listPlaces();
       if (!places.some(p => p.path === parkingPath && p.kind === 'parking') || !places.some(p => p.path === shopPath && p.kind === 'shop')) throw new Error('Choose a shop and a parking note.');
-      await this.app.vault.process(this.file(parkingPath), text => { const n = readNote(text); const old = Array.isArray(n.properties.parking_for) ? n.properties.parking_for : [];
+      await this.app.vault.process(this.file(parkingPath), text => { const n = readNote(text); const old = isUnknownArray(n.properties.parking_for) ? n.properties.parking_for : [];
         n.properties.parking_for = [...old.filter(v => linkPath(v) !== shopPath), wiki(shopPath)]; return writeNote(n.properties, n.body); });
       if (preferred) await this.prefer(shopPath, parkingPath);
     });
@@ -725,7 +730,6 @@ export class SourcingStore {
     for (const file of allFiles.filter(f => f.path.startsWith(root + '/') && (migrationEligible(f.path) || f.path.startsWith(root + '/Examples/System/Migration backups/')))) mapping.set(file.path, targetRoot + canonical(file.path.slice(root.length)));
     const generated = bundledAssets(targetRoot, this.app.vault.getName());
     for (const [kind, template] of Object.entries(createClipperTemplates(targetRoot, this.app.vault.getName()))) generated[targetRoot + '/System/Templates/Web Clipper/Capture ' + (kind === 'shop' ? 'source' : kind) + '.json'] = JSON.stringify(template, null, 2) + '\n';
-    const localities = await this.listLocalities();
     const content: Record<string, string> = {};
     for (const [from, to] of mapping) {
       const asset = this.settings.assets[from];
@@ -787,7 +791,7 @@ export class SourcingStore {
       mapping.set(locality.path, this.paths.area(segments));
     }
     prefixes.push([this.paths.places + '/' + current.segments.join('/'), this.paths.places + '/' + newSegments.join('/')]);
-    const [fromPlaces, toPlaces] = prefixes[0]!;
+    const [fromPlaces, toPlaces] = prefixes[0];
     for (const file of allFiles) if (file.path.startsWith(fromPlaces + '/')) mapping.set(file.path, toPlaces + file.path.slice(fromPlaces.length));
     for (const branch of ['Sources', 'Shops', 'Parking']) {
       const fromPrefix = this.root + '/' + branch + '/' + current.segments.join('/');
@@ -808,7 +812,7 @@ export class SourcingStore {
     for (const locality of descendants) for (const branch of ['Sources', 'Shops', 'Parking']) {
       const from = this.root + '/' + branch + '/' + locality.segments.join('/') + '/Area map.base';
       const asset = this.settings.assets[from], file = this.app.vault.getAbstractFileByPath(from);
-      if (asset && isFile(file) && asset.hash === await hashText(await this.app.vault.read(file))) content[from] = this.contextBase(baseText(this.root, undefined, mapping.get(locality.path)!, this.app.vault.getName()), mapping.get(from) ?? from);
+      if (asset && isFile(file) && asset.hash === await hashText(await this.app.vault.read(file))) content[from] = this.contextBase(baseText(this.root, undefined, mapping.get(locality.path), this.app.vault.getName()), mapping.get(from) ?? from);
     }
     const preview = await prepareMove(this.app, this.settings, { ...this.moveOptions(), kind: 'locality', toRoot: this.root, mapping, prefixes, content, locality: { path, name, parentPath } });
     return preview;
