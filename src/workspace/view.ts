@@ -5,7 +5,7 @@ import type { PlaceRecord } from '../types';
 import type { OutingPreparation, PreparationDraft, WorkspaceRoute, WorkspaceViewState } from './types';
 import { OutingPreparationModal } from './outing-preparation';
 import { PlacePreparationModal } from './place-preparation';
-import { button, ContactModal, ChangeAreaModal, CreditsModal, details, errorText, external, LocalityModal, manualDraft, PickModal, SetupModal, VisitModal } from '../ui';
+import { button, ChangeAreaModal, CreditsModal, details, errorText, external, LocalityModal, manualDraft, PickModal, SetupModal, VisitModal } from '../ui';
 import { inspectHome } from '../home/overview';
 import { chooseVisitSource, resume } from '../ui/home';
 import { renderOuting, renderOutingsHome } from '../ui/outings';
@@ -18,6 +18,11 @@ import { readNote } from '../storage/markdown';
 import { routeForPath } from './routes';
 import { workspaceContext } from './context';
 import { isUnknownArray } from '../domain/guards';
+import { renderPlacesBrowser } from './places-browser';
+import { defaultPlaceQuery, normalisePlaceQuery, normalisePlaceSort, serialisePlaceQuery } from './place-query';
+import { renderPlaceSummary } from '../ui/place-summary';
+import { detailMapPlaces } from '../map/detail';
+import { openPlaceEditor, resumePlaceEditor } from '../place-edit/editor';
 import { checkedViewState } from './view-state';
 export { routeForPath } from './routes';
 
@@ -31,6 +36,7 @@ export async function openSourcingWorkspace(host: NotebookUiHost, context: Noteb
   if (!existing) await leaf.setViewState({ type: WORKSPACE_VIEW, state: { root: context.root, route } });
   else await (leaf.view as SourcingWorkspace).navigate(route);
   await host.app.workspace.revealLeaf(leaf);
+  host.app.workspace.setActiveLeaf(leaf, { focus: true });
 }
 
 export class SourcingWorkspace extends ItemView {
@@ -46,7 +52,11 @@ export class SourcingWorkspace extends ItemView {
   getViewType() { return WORKSPACE_VIEW; }
   getDisplayText() { return this.context?.kind === 'examples' ? 'Sourcing practice' : 'Reseller sourcing'; }
   getIcon() { return 'store'; }
-  getState(): Record<string, unknown> { this.remember(); return structuredClone(this.state) as unknown as Record<string, unknown>; }
+  getState(): Record<string, unknown> {
+    this.remember(); const state = structuredClone(this.state);
+    if (state.places?.criteria) state.places.criteria = serialisePlaceQuery(state.places.criteria);
+    return state as unknown as Record<string, unknown>;
+  }
   async setState(raw: unknown, result: ViewStateResult) {
     const state = checkedViewState(raw);
     if (state) { this.body = undefined; this.state = state; }
@@ -89,7 +99,7 @@ export class SourcingWorkspace extends ItemView {
         if (this.closed) return;
         if (this.body?.contains(this.containerEl.ownerDocument.activeElement) && this.containerEl.ownerDocument.activeElement?.matches('input,textarea,select')) { this.pendingRefresh = true; return; }
         this.pendingRefresh = false;
-        if (this.map && this.state.route.screen !== 'home') { void this.refreshMap(); return; }
+        if (this.map && this.state.route.screen === 'area') { void this.refreshMap(); return; }
         void this.render().catch(e => this.showError(e));
       }, 180);
     };
@@ -100,10 +110,22 @@ export class SourcingWorkspace extends ItemView {
         const before = this.root; this.state.root = file.path.slice(0,-'/Home.md'.length);
         if ('path' in this.state.route) this.state.route.path = this.state.route.path.replace(before+'/',this.root+'/');
         if (this.state.places?.area) this.state.places.area = this.state.places.area.replace(before+'/',this.root+'/');
+        const query = this.state.places?.criteria;
+        if (query) {
+          query.area = query.area.replace(before+'/', this.root+'/');
+          if (query.nearby?.reference.kind === 'place') query.nearby.reference.path = query.nearby.reference.path.replace(before+'/',this.root+'/');
+        }
         this.context = undefined;
       }
       if ('path' in this.state.route && this.state.route.path === old) this.state.route.path = file.path;
+      for (const position of Object.values(this.state.positions ?? {})) if (position.focus === 'place:' + old) position.focus = 'place:' + file.path;
       if (this.state.places?.area === old) this.state.places.area = file.path;
+      const criteria = this.state.places?.criteria;
+      if (criteria) {
+        if (criteria.area === old) criteria.area = file.path;
+        const reference = criteria.nearby?.reference;
+        if (reference?.kind === 'place' && reference.path === old) reference.path = file.path;
+      }
       update(file);
     }));
   }
@@ -126,11 +148,13 @@ export class SourcingWorkspace extends ItemView {
     if (this.history.length > 40) this.history.shift(); this.state.route = route;
     await this.render(false); this.app.workspace.requestSaveLayout();
   }
-  private async openNote(path: string) {
+  private async openNote(path: string, edit = false) {
     const file = path.split('#')[0];
     if (!file.startsWith(this.root + '/') || file.startsWith(this.root + '/Examples/') || !this.context?.store.scoped(file)) throw Error('Choose a note in this notebook.');
-    if (!(this.app.vault.getAbstractFileByPath(file) instanceof TFile)) throw Error('This note no longer exists.');
-    await this.app.workspace.openLinkText(path, this.root + '/Home.md', true);
+    const record = this.app.vault.getAbstractFileByPath(file);
+    if (!(record instanceof TFile)) throw Error('This note no longer exists.');
+    if (edit) await this.app.workspace.getLeaf('tab').openFile(record, { state: { mode: 'source' } });
+    else await this.app.workspace.openLinkText(path, this.root + '/Home.md', true);
   }
   private showError(error: unknown) { if (!this.closed) { this.body?.createEl('p', { text: errorText(error), cls: 'charity-error' }); } }
   private async refreshMap() {
@@ -139,7 +163,10 @@ export class SourcingWorkspace extends ItemView {
     if (this.closed || this.map !== map) return;
     if (route.screen === 'area') { const folder = route.path.replace(/\/Area\.md$/, '/'); map.setRecords(places.filter(p => p.locality === route.path || p.path.startsWith(folder))); }
     else if (route.screen === 'place' && !places.some(p => p.path === route.path)) await this.render();
-    else map.setRecords(route.screen === 'places' ? this.filterPlaces(places).filter(p => !p.properties.shop_closed) : places);
+    else if (route.screen === 'place') {
+      const focus = places.find(p => p.path === route.path);
+      if (focus) map.setRecords(detailMapPlaces(focus, places, this.context.mapHost));
+    } else map.setRecords(places);
   }
   private async render(remember = true) {
     if (this.closed || !this.root) return;
@@ -174,16 +201,17 @@ export class SourcingWorkspace extends ItemView {
     this.contentEl.replaceChildren(this.shell); this.mobileInsets();
     header.querySelector('button:last-child')?.setText(this.moreCount ? 'More (' + this.moreCount + ')' : 'More');
     if ('path' in route) button(el.createDiv('charity-workspace-note-link'), 'Open note', () => this.openNote(route.path));
-    Array.from(el.querySelectorAll<HTMLElement>('button,input,textarea,summary')).forEach((n, i) => n.setAttribute('data-workspace-focus', n.getAttribute('aria-label') ?? n.textContent?.trim().slice(0, 70) ?? String(i)));
+    Array.from(el.querySelectorAll<HTMLElement>('button,input,textarea,summary')).forEach((n, i) => n.setAttribute('data-workspace-focus', n.getAttribute('data-workspace-focus') ?? n.getAttribute('aria-label') ?? n.textContent?.trim().slice(0, 70) ?? String(i)));
     const position = this.state.positions?.[this.key()];
     if (position) {
       for (const d of el.querySelectorAll<HTMLDetailsElement>('details')) if (position.expanded?.includes(d.querySelector('summary')?.textContent ?? '')) d.open = true;
       el.scrollTop = position.scroll;
-      if (position.focus) Array.from(el.querySelectorAll<HTMLElement>('[data-workspace-focus]')).find(n => n.getAttribute('data-workspace-focus') === position.focus)?.focus({ preventScroll: true });
+      if (position.focus) Array.from(el.querySelectorAll<HTMLElement>('[data-workspace-focus]')).find(n => n.checkVisibility() && n.getAttribute('data-workspace-focus') === position.focus)?.focus({ preventScroll: true });
     }
   }
   private openPreparation(draft: PreparationDraft) {
     if (draft.kind === 'outing') new OutingPreparationModal(this.context!, undefined, draft.id).open();
+    else if (draft.kind === 'place-edit') void resumePlaceEditor(this.context!, draft.id).catch(e => new Notice(errorText(e)));
     else new PlacePreparationModal(this.context!, manualDraft('shop'), undefined, draft.id).open();
   }
   private async renderHome(el: HTMLElement) {
@@ -203,7 +231,7 @@ export class SourcingWorkspace extends ItemView {
     } else { lead.createEl('p', { text: 'Start with an area or your shortlist.' }); button(lead, 'Choose where to go', () => c.newOuting(), true); }
     const quick = el.createDiv('charity-actions'); button(quick, 'Record a visit', () => chooseVisitSource(c)); button(quick, 'Find a place', () => this.navigate({ screen: 'places' }));
     const saved = details(el, 'Saved for later');
-    for (const d of prep.drafts) { const row = saved.createDiv('charity-compact-row'); row.createSpan({ text: d.kind === 'outing' ? (d.data).name || 'Outing preparation' : (d.data).capture.name || 'Place preparation' }); button(row, d.phase === 'completing' ? 'Review saved completion' : 'Resume', () => this.openPreparation(d)); }
+    for (const d of prep.drafts) { const row = saved.createDiv('charity-compact-row'); row.createSpan({ text: d.kind === 'outing' ? d.data.name || 'Outing preparation' : d.kind === 'place-edit' ? 'Edit ' + (d.data.snapshot.values.displayName || d.data.snapshot.path.split('/').pop()?.replace(/\.md$/, '') || 'place') : d.data.capture.name || 'Place preparation' }); button(row, d.phase === 'completing' ? 'Review saved completion' : 'Resume', () => this.openPreparation(d)); }
     for (const item of [overview.primary, ...overview.others].filter((v): v is NonNullable<typeof v> => !!v && v.outingPath !== active?.path)) {
       const row = saved.createDiv('charity-compact-row'); row.createSpan({ text: item.sourceName || item.label }); button(row, item.kind.endsWith('operation') ? 'Review save' : 'Resume', () => resume(c, item));
     }
@@ -211,39 +239,32 @@ export class SourcingWorkspace extends ItemView {
     if (!saved.querySelector('button')) saved.createEl('p', { text: 'No saved work waiting here.', cls: 'charity-hint' });
     for (const warning of [...overview.warnings, ...prep.warnings]) { const row = el.createDiv('charity-workspace-warning'); row.createEl('p', { text: warning.message, cls: 'charity-error' }); if (warning.path) button(row, 'Review saved file', () => this.openNote(warning.path!)); }
   }
-  private filterPlaces(places: PlaceRecord[]) {
-    const f = this.state.places ??= { query: '', area: '', kind: 'shop', shortlist: false, view: 'list' };
-    return places.filter(p => (!f.kind || p.kind === f.kind) && (!f.shortlist || p.properties.shortlist === true && !p.properties.shop_closed) &&
-      (!f.area || p.locality === f.area || p.path.startsWith(f.area.replace(/\/Area\.md$/, '') + '/')) &&
-      (!f.query || [p.name, p.properties.address, p.properties.comments, p.path].join(' ').toLocaleLowerCase().includes(f.query.toLocaleLowerCase())));
-  }
   private async renderPlaces(el: HTMLElement) {
-    const c = this.context!, [places, areas] = await Promise.all([c.store.listPlaces(), c.store.listLocalities()]);
-    if (this.closed || this.body !== el) return;
-    el.createEl('h1', { text: 'Places' }); const controls = el.createDiv('charity-actions');
+    const c = this.context!;
+    el.createEl('h1', { text: 'Places' });
+    const controls = el.createDiv('charity-actions');
     button(controls, 'Add a place', () => c.newPlace('shop')); button(controls, 'Add parking', () => c.newPlace('parking'));
-    this.filterPlaces(places); const f = this.state.places!;
-    const search = el.createEl('input', { type: 'search', placeholder: 'Search names, areas or takeaways', attr: { 'aria-label': 'Search places' } }); search.value = f.query;
-    const tools = el.createDiv('charity-actions');
-    for (const view of ['list', 'map'] as const) { const b = button(tools, view === 'list' ? 'List' : 'Map', () => { f.view = view; return this.render(); }); b.setAttribute('aria-pressed', String(f.view === view)); }
-    const filters = details(el, 'Filters');
-    button(filters, 'Area: ' + (areas.find(a => a.path === f.area)?.label ?? 'All areas'), () => new PickModal(c, [{ path: '', label: 'All areas' }, ...areas], a => a.label, a => { f.area = a.path; return this.render(); }, 'Choose area').open());
-    button(filters, 'Show: ' + (f.kind === 'shop' ? 'Sources' : f.kind === 'parking' ? 'Parking' : 'All places'), () => new PickModal(c, [{ value: 'shop', name: 'Sources' }, { value: 'parking', name: 'Parking' }, { value: '', name: 'All places' }], v => v.name, v => { f.kind = v.value; return this.render(); }, 'Place types').open());
-    new Setting(filters).setName('Shortlist only').addToggle(t => t.setValue(f.shortlist).onChange(v => { f.shortlist = v; void this.render(); }));
-    const more = details(el, 'More views'); button(more, 'Source tables and comparisons', () => this.openNote(c.root + '/System/Sources.base')); button(more, 'Parking tables', () => this.openNote(c.root + '/System/Parking.base')); button(more, 'Manage areas', () => new PickModal(c, areas, a => a.label, a => this.navigate({ screen: 'area', path: a.path }), 'Choose area').open());
-    const list = el.createDiv('charity-place-list');
-    const draw = () => {
-      list.empty(); const filtered = this.filterPlaces(places);
-      if (f.view === 'map') this.map = mountPlaceMap(this.owner, list, c.mapHost, { records: filtered.filter(p => !p.properties.shop_closed), locality: true });
-      else for (const p of filtered) {
-        const row = list.createEl('article', { cls: 'charity-source-choice' }), text = row.createDiv();
-        button(text, p.name, () => this.navigate({ screen: 'place', path: p.path })).addClass('charity-place-name');
-        text.createEl('p', { text: [areas.find(a => a.path === p.locality)?.label ?? 'Unassigned', p.kind === 'shop' ? formatRating(p.properties.rating) : 'Parking', p.properties.shop_closed ? 'Permanently closed' : ''].filter(Boolean).join(' · '), cls: 'charity-hint' });
-        if (p.properties.comments) text.createEl('p', { text: propertyText(p.properties.comments) });
-      }
-      if (!filtered.length) list.createEl('p', { text: 'No matching places. Change the search or filters.' });
+    const f = this.state.places ??= { query: '', area: '', kind: 'shop', shortlist: false, view: 'list' };
+    const browser = {
+      query: f.criteria ?? normalisePlaceQuery({ text: f.query, area: f.area, kind: f.kind || 'all', shortlist: f.shortlist }),
+      sort: normalisePlaceSort(f.sort), view: f.view,
     };
-    search.oninput = () => { f.query = search.value; if (f.view === 'list') draw(); else this.map?.setRecords(this.filterPlaces(places).filter(p => !p.properties.shop_closed)); this.app.workspace.requestSaveLayout(); }; draw();
+    const areas = await c.store.listLocalities();
+    if (this.closed || this.body !== el) return;
+    await renderPlacesBrowser(c, this.owner, el, browser, {
+      open: path => this.navigate({ screen: 'place', path }),
+      changed: () => {
+        f.criteria = browser.query; f.sort = browser.sort; f.view = browser.view;
+        f.query = browser.query.text; f.area = browser.query.area; f.kind = browser.query.kind === 'all' ? '' : browser.query.kind; f.shortlist = browser.query.shortlist;
+        this.app.workspace.requestSaveLayout();
+      },
+      plan: (query, sort) => new OutingPreparationModal(c, undefined, undefined, { query: serialisePlaceQuery(query), sort }).open(),
+      more: parent => {
+        button(parent, 'Source tables and comparisons', () => this.openNote(c.root + '/System/Sources.base'));
+        button(parent, 'Parking tables', () => this.openNote(c.root + '/System/Parking.base'));
+        button(parent, 'Manage areas', () => new PickModal(c, areas, a => a.label, a => this.navigate({ screen: 'area', path: a.path }), 'Choose area').open());
+      },
+    });
   }
   private async renderPlace(el: HTMLElement, path: string, section: 'overview' | 'map' | 'visits' | 'details') {
     const c = this.context!, [places, areas] = await Promise.all([c.store.listPlaces(), c.store.listLocalities()]); const p = places.find(v => v.path === path);
@@ -251,7 +272,14 @@ export class SourcingWorkspace extends ItemView {
     if (!p) throw Error('This place no longer exists. Choose another from Places.');
     el.createEl('h1', { text: p.name }); el.createEl('p', { text: areas.find(a => a.path === p.locality)?.label ?? 'Unassigned', cls: 'charity-hint' });
     if (p.kind === 'shop') el.createEl('p', { text: formatRating(p.properties.rating) + (p.properties.comments ? ' · ' + propertyText(p.properties.comments) : '') });
-    const actions = el.createDiv('charity-actions'); if (p.kind === 'shop') button(actions, 'Record visit', () => new VisitModal(c, path).open(), true);
+    const edit = (section?: 'location' | 'assessment') => openPlaceEditor(c, path, {
+      section, afterSave: () => this.render(),
+      changeArea: () => new ChangeAreaModal(c, path).open(),
+      manageParking: () => this.navigate({ screen: 'place', path, section: 'details' }),
+    });
+    const actions = el.createDiv('charity-actions'); button(actions, 'Edit place', () => edit());
+    button(actions, 'Edit notes', () => this.openNote(path, true));
+    if (p.kind === 'shop') button(actions, 'Record visit', () => new VisitModal(c, path).open(), true);
     const parking = p.kind === 'shop' ? resolveParking(p, places) : { status: 'single', destination: p, choices: [] as PlaceRecord[] };
     const directions = button(actions, 'Directions', () => {
       const menu = new Menu();
@@ -264,19 +292,21 @@ export class SourcingWorkspace extends ItemView {
     if (p.kind === 'shop') new Setting(el).setName('Shortlist').addToggle(t => t.setValue(p.properties.shortlist === true).onChange(v => void c.store.updateAssessment(path, { shortlist: v }).catch(e => new Notice(errorText(e)))));
     const tabs = el.createDiv('charity-actions');
     for (const key of ['overview', 'map', 'visits', 'details'] as const) { if (key === 'visits' && p.kind === 'parking') continue; const b = button(tabs, key[0].toUpperCase() + key.slice(1), () => this.navigate({ screen: 'place', path, section: key })); b.setAttribute('aria-pressed', String(key === section)); }
-    if (section === 'map') { this.map = mountPlaceMap(this.owner, el, c.mapHost, { records: places, focusPath: p.path }); return; }
+    if (section === 'map') {
+      if (!p.coordinates) { await renderPlaceSummary(c, this.owner, el, path, { showActions: false, showAssessment: false, onEdit: () => edit('location') }); return; }
+      this.map = mountPlaceMap(this.owner, el, c.mapHost, { records: detailMapPlaces(p, places, c.mapHost), focusPath: p.path }); return;
+    }
     if (section === 'visits') { button(el, 'Visit insights', () => new VisitInsightsModal(c, path).open()); await renderVisitHistory(c, this.owner, el, path); const list = el.querySelector('details'); if (list) list.open = true; return; }
     if (section === 'overview') {
+      this.map = await renderPlaceSummary(c, this.owner, el, path, { showActions: false, showAssessment: false, isCurrent: () => !this.closed && this.body === el, onEdit: () => edit('location') });
+      if (this.closed || this.body !== el) return;
       if (p.kind === 'shop') {
         const visits = await c.store.visits.list(path), reminder = visits.find(v => v.nextTime.trim());
         if (this.closed || this.body !== el) return;
         if (reminder) { el.createEl('h2', { text: 'Remember next time' }); el.createEl('p', { text: reminder.nextTime }); }
         el.createEl('p', { text: 'Last visit: ' + propertyText(p.properties.last_visited, 'No date recorded'), cls: 'charity-hint' });
-        const assessment = details(el, 'Update assessment');
-        new Setting(assessment).setName('Sourcing rating').addDropdown(d => { for (let n = 0; n <= 5; n += .5) d.addOption(String(n), n ? String(n) : 'Not rated'); d.setValue(propertyText(p.properties.rating, '0')).onChange(v => void c.store.updateAssessment(path, { rating: Number(v) }).catch(e => new Notice(errorText(e)))); });
-        new Setting(assessment).setName('Takeaway').addText(t => { t.setValue(propertyText(p.properties.comments)); t.inputEl.onchange = () => void c.store.updateAssessment(path, { comments: t.getValue() }).catch(e => new Notice(errorText(e))); });
+        button(el, 'Update assessment', () => edit('assessment'));
       }
-      el.createEl('p', { text: parking.status === 'choice' ? 'Driving: choose from linked parking.' : 'Driving destination: ' + (parking.destination?.name ?? 'needs a parking choice or location'), cls: 'charity-hint' });
       const file = this.app.vault.getAbstractFileByPath(path); if (file instanceof TFile) {
         const body = readNote(await this.app.vault.read(file)).body.replace(/```charity-sourcing[\s\S]*?```/g, '').trim();
         if (this.closed || this.body !== el) return;
@@ -285,14 +315,14 @@ export class SourcingWorkspace extends ItemView {
       return;
     }
     external(c, el, 'Website', websiteUrl(p.properties.website)); external(c, el, 'Call', telephoneUrl(propertyText(p.properties.telephone)));
-    button(el, 'Edit contacts', () => new ContactModal(c, p).open()); button(el, 'Change area', () => new ChangeAreaModal(c, path).open());
-    const editText = (parent: HTMLElement, label: string, key: string) => new Setting(parent).setName(label).addText(t => { t.setValue(propertyText(p.properties[key])); t.inputEl.onchange = () => void c.store.updatePlaceDetails(path, { [key]: t.getValue() }).catch(e => new Notice(errorText(e))); });
-    editText(el, 'Address', 'address');
+    button(el, 'Edit contacts', () => openPlaceEditor(c, path, { section: 'contacts', afterSave: () => this.render() })); button(el, 'Change area', () => new ChangeAreaModal(c, path).open());
+    el.createEl('p', { text: 'Address: ' + propertyText(p.properties.address, 'Not set') });
+    if (p.properties.opening_notes) el.createEl('p', { text: 'Opening notes: ' + propertyText(p.properties.opening_notes) });
     if (p.kind === 'shop') {
-      new Setting(el).setName('Permanently closed').addToggle(t => t.setValue(p.properties.shop_closed === true).onChange(v => void c.store.updatePlaceDetails(path, { shop_closed: v }).catch(e => new Notice(errorText(e)))));
+      if (p.properties.shop_closed) el.createEl('p', { text: 'Permanently closed', cls: 'charity-hint' });
       const links = details(el, 'Parking');
-      new Setting(links).setName('Parking on site').addDropdown(d => { for (const [value,label] of [['unknown','Unknown'],['yes','Available on site'],['no','None on site']]) d.addOption(value,label); d.setValue(propertyText(p.properties.parking_on_site, 'unknown')).onChange(v => void c.store.updatePlaceDetails(path, { parking_on_site: v }).catch(e => new Notice(errorText(e)))); });
-      editText(links, 'On-site cost (free / paid / details)', 'on_site_parking_cost'); editText(links, 'Typical availability', 'on_site_parking_availability');
+      links.createEl('p', { text: 'On site: ' + propertyText(p.properties.parking_on_site, 'unknown') + ' · ' + propertyText(p.properties.on_site_parking_cost, 'cost unknown') + ' · ' + propertyText(p.properties.on_site_parking_availability, 'availability unknown') });
+      button(links, 'Edit parking details', () => openPlaceEditor(c, path, { section: 'parking', afterSave: () => this.render() }));
       button(links, 'Link parking', () => new PickModal(c, places.filter(v => v.kind === 'parking'), v => v.name, v => c.store.linkParking(v.path, path), 'Choose shared parking').open());
       button(links, 'Add parking', () => c.newPlace('parking', p.coordinates, path));
       for (const option of parking.choices) {
@@ -302,10 +332,12 @@ export class SourcingWorkspace extends ItemView {
       }
       button(links, 'No preferred parking', () => c.store.setPreferredParking(path, ''));
     } else {
-      editText(el, 'Cost (free / paid / details)', 'parking_cost'); editText(el, 'Typical availability', 'parking_availability');
+      el.createEl('p', { text: 'Parking: ' + propertyText(p.properties.parking_cost, 'cost unknown') + ' · ' + propertyText(p.properties.parking_availability, 'availability unknown') });
       const links = details(el, 'Sources served by this parking');
       button(links, 'Link a source', () => new PickModal(c, places.filter(v => v.kind === 'shop'), v => v.name, v => c.store.linkParking(path, v.path), 'Choose source').open());
-      for (const source of places.filter(v => v.kind === 'shop' && resolveParking(v,places).choices.some(q => q.path === path))) { const row = links.createDiv('charity-compact-row'); button(row, source.name, () => c.openFile(source.path)); button(row, 'Unlink', () => c.store.unlinkParking(path, source.path)); }
+      for (const source of places.filter(v => v.kind === 'shop' && resolveParking(v,places).choices.some(q => q.path === path))) {
+        const row = links.createDiv('charity-compact-row'); button(row, source.name, () => c.openFile(source.path)); button(row, 'Unlink', () => c.store.unlinkParking(path, source.path));
+      }
     }
     const captured = details(el, 'Captured Google details');
     captured.createEl('p', { text: 'Google ' + propertyText(p.properties.google_rating, 'unknown') + ' / 5 · ' + propertyText(p.properties.google_review_count, 'unknown') + ' reviews · checked ' + propertyText(p.properties.google_checked, 'unknown') });
@@ -317,7 +349,7 @@ export class SourcingWorkspace extends ItemView {
   private async renderArea(el: HTMLElement, path: string) {
     const c = this.context!, area = (await c.store.listLocalities()).find(a => a.path === path); if (!area) throw Error('Area no longer exists.');
     if (this.closed || this.body !== el) return;
-    el.createEl('h1', { text: area.label }); button(el, 'Choose places here', () => { this.state.places = { query: '', area: path, kind: 'shop', shortlist: false, view: 'list' }; return this.navigate({ screen: 'places' }); }, true);
+    el.createEl('h1', { text: area.label }); button(el, 'Choose places here', () => { this.state.places = { query: '', area: path, kind: 'shop', shortlist: false, view: 'list', criteria: { ...defaultPlaceQuery(), area: path } }; return this.navigate({ screen: 'places' }); }, true);
     button(el, 'Rename or change parent', () => new LocalityModal(c, area).open());
     const places = (await c.store.listPlaces()).filter(p => p.locality === path || p.path.startsWith(c.root + '/Places/' + area.segments.join('/') + '/'));
     if (this.closed || this.body !== el) return;

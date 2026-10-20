@@ -1,8 +1,8 @@
 # Reseller sourcing
 
-An Obsidian plugin for planning sourcing trips, remembering places and recording visits. Version **0.11.1** is an **early release** for desktop and Android. Your records remain readable Markdown and YAML; inventory and sales can stay in your existing tools.
+An Obsidian plugin for planning sourcing trips, remembering places and recording visits. Version **0.12.0** is an **early release** for desktop and Android. Your records remain readable Markdown and YAML; inventory and sales can stay in your existing tools.
 
-Download the [0.11.1 release](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.11.1) for desktop or Android. Source: [an1uk/obsidian-reseller-sourcing](https://github.com/an1uk/obsidian-reseller-sourcing). The plugin is not yet listed in Community Plugins.
+Download the [0.12.0 release](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.12.0) for desktop or Android. Source: [an1uk/obsidian-reseller-sourcing](https://github.com/an1uk/obsidian-reseller-sourcing). The plugin is not yet listed in Community Plugins.
 
 ## Start in the workspace
 
@@ -30,15 +30,17 @@ Google Maps export previews retain every selected destination, including shared 
 
 Manual place creation requires only a **name**. Area, location and other details can follow. Unassigned places remain visible. Source type defaults to Charity shop and is configurable; an explicit selection takes precedence, and changing the default is opt-in.
 
-Places provides search, List/Map and filters. **More views** retains Bases tables, grouping, sorting and Google comparisons. A place leads with its assessment, takeaway, latest reminder, **Record visit**, **Directions** and shortlist control. Overview, Map, Visits and Details separate everyday actions from contacts, organisation and captured details.
+Places provides a sortable table in wide panes and compact cards with a Sort control on phones. Click a column heading to sort by name, area, type, numeric sourcing rating, last visit or shortlist. Search names, addresses, brands and takeaways; filter by area including descendants, type, rating, shortlist, closed status, recorded visits and missing locations. Nearby searches use a saved place, map point or explicitly requested current location, with straight-line estimates and a configurable radius. Current device coordinates are temporary. Table/cards and maps share the same filters, and Plan an outing from these places carries the criteria into selection without selecting stops. **More views** retains Bases tables, grouping, sorting and Google comparisons. A place leads with its assessment, takeaway, latest reminder, **Record visit**, **Directions** and shortlist control. Overview, Map, Visits and Details separate everyday actions from contacts, organisation and captured details.
 
 Visit forms keep source, editable visit date, items purchased and quick note visible. Blank purchases means unknown; zero means nothing bought. Haul details, stock colours, finds, reminders and assessment updates are expandable. **Save visit** records the entry; **Close** leaves its draft saved. Recording a visit does not clear the shortlist or silently change the current assessment.
 
 History offers All visits, This week, Previous week and Custom dates, with Monday–Sunday weeks. Insights compares visits, purchases, whole-haul potential and stock-colour observations. Small samples and uncertainty remain visible; stock colours are observations rather than predictions. Sourcing ratings are **0 = unrated** or **0.5–5** in half-star steps, separately from Google ratings.
 
+**Edit place** edits personal names, type/brand, address, location, contacts, opening notes, assessment and parking details. Close retains an unfinished draft; **Save place** explicitly applies the changes. Conflicting edits are reported while your input is kept. A personal display name stays separate from Google names, filenames and review refreshes. Captured Google snapshots remain reviewable through capture refresh. **Edit notes** opens the original Markdown for prose; edits preserve unrelated note content.
+
 ## Maps and parking
 
-Free OpenFreeMap backgrounds use OpenStreetMap data with visible attribution. Place maps start close up; area maps fit their pins with padding. Marker taps open persistent popups. Coordinate and saved-camera actions are available. Location is requested only after an explicit action and stops when the map closes or the app backgrounds. Map failures offer retry while records remain usable.
+Free OpenFreeMap backgrounds use OpenStreetMap data with visible attribution. Individual Markdown notes show a compact map before navigation links; the workspace Overview includes the same focused map. Missing coordinates offer Add location; a closed place retains its own labelled pin. Detail maps show the selected place and associated parking. Place maps start close up; area maps fit their pins with padding. Marker taps open persistent popups. Coordinate and saved-camera actions are available. Location is requested only after an explicit action and stops when the map closes or the app backgrounds. Map failures offer retry while records remain usable.
 
 A parking location can serve several sources, and a source can have several alternatives. Link parking or place a new pin from a source map. Choose a preferred location or select one for an outing. Driving shows the selected parking destination; walking targets the source. Missing parking coordinates do not silently become shop coordinates.
 
@@ -74,7 +76,7 @@ The optional Guided tour can be deleted independently. Deleted example records o
 
 ## Build and install
 
-For the ready-to-install package, download **charity-sourcing-0.11.1.zip** from the [release page](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.11.1). The same release also provides **main.js**, **manifest.json** and **styles.css** separately, plus **release-checksums.json** with SHA-256 hashes. Desktop and Android use the same files. Follow the manual installation steps below.
+For the ready-to-install package, download **charity-sourcing-0.12.0.zip** from the [release page](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.12.0). The same release also provides **main.js**, **manifest.json** and **styles.css** separately, plus **release-checksums.json** with SHA-256 hashes. Desktop and Android use the same files. Follow the manual installation steps below.
 
 Use **Node.js 22 or newer** and npm:
 

@@ -20,6 +20,7 @@ import { ASSET_VERSION, baseText, bodyForPlace, bundledAssets, placeProperties }
 import { hashText, linkPath, readNote, updateNoteProperty, wiki, writeNote } from './markdown';
 import { localitySubtree, resolveLocalities, validLocalityName } from '../domain/hierarchy';
 import { executeMove, migrationEligible, prepareMove, rewriteLinks, rollbackMove as recoverMove, stripCodexMarkers, validateMovePreview } from './migration';
+import { assertPlaceEditComparison, isPlaceEditPreparation, placeDisplayName, placeEditPatch, placeEditReceiptFor, placeEditSnapshot, reviewPlaceEdit, sameGoogleListing, type PlaceEditReview, type PlaceEditSnapshot, type PlaceEditValues } from '../place-edit/model';
 
 interface AreaPlan { town: LocalityRecord; leaf: LocalityRecord; chain: LocalityRecord[]; missing: LocalityRecord[]; creations: string[]; }
 
@@ -277,7 +278,7 @@ export class SourcingStore {
         if (this.mode === 'live' && p.sourcing_example === true) continue;
         const tags = Array.isArray(p.tags) ? p.tags : [];
         const kind = (tags.includes('sourcing-source') || tags.includes('charity-shop')) ? 'shop' : tags.includes('parking') ? 'parking' : null;
-        if (kind) places.push({ path: file.path, name: typeof p.google_name === 'string' && p.google_name ? p.google_name : file.basename,
+        if (kind) places.push({ path: file.path, name: placeDisplayName(p, file.basename),
           kind, locality: linkPath(p.locality), coordinates: validateCoordinates(p.coordinates), properties: p });
       } catch { /* Ignore invalid notes without modifying them. */ }
     }
@@ -612,6 +613,7 @@ export class SourcingStore {
     if (draft.kind === 'shop') this.sourceType(draft.sourceType);
   }
   private async executePlan(preview: MovePreview): Promise<MoveReport> {
+    await this.assertPlaceEditMovesAllowed(new Set(preview.entries.filter(entry => entry.from !== entry.to || entry.text !== undefined).map(entry => entry.from)));
     if (this.mode === 'examples') {
       const root = this.options.writeBoundary ?? this.root, state = root + '/System/Practice state.json';
       if (preview.fromRoot !== this.root || preview.toRoot !== this.root || preview.entries.some(entry =>
@@ -662,6 +664,61 @@ export class SourcingStore {
       await this.app.vault.process(this.file(path), text => { const n = readNote(text); n.properties.coordinates = valid; return writeNote(n.properties, n.body); });
     });
   }
+  async placeEditSnapshot(path: string): Promise<PlaceEditSnapshot> {
+    const place = (await this.listPlaces()).find(value => value.path === path);
+    if (!place) throw Error('This place no longer exists in this notebook.');
+    return placeEditSnapshot(place);
+  }
+  async reviewPlaceEdit(snapshot: PlaceEditSnapshot, values: PlaceEditValues, draftId: string): Promise<PlaceEditReview> {
+    const draft = await this.preparations.get(draftId);
+    if (!draft || draft.kind !== 'place-edit' || draft.phase !== 'editing') throw Error('Reopen the saved place edit before comparing current values.');
+    const current = await this.placeEditSnapshot(snapshot.path), raw = await this.app.vault.read(this.file(snapshot.path));
+    if (placeEditReceiptFor(readNote(raw).properties.place_edit_receipts, draftId)) throw Error('This place edit already saved. Finish its saved completion instead of changing the draft.');
+    return reviewPlaceEdit(snapshot, values, current);
+  }
+  /** Read-only preflight. Repeated inside the serial apply and atomic note callback. */
+  async validatePlaceEdit(snapshot: PlaceEditSnapshot, values: PlaceEditValues): Promise<void> {
+    this.writable();
+    if (!isPlaceEditPreparation({ snapshot, values, section: 'basics' }, (path): path is string => typeof path === 'string' && this.scoped(path))) throw Error('Place editor details are invalid or belong to another notebook.');
+    const places = await this.listPlaces(), place = places.find(value => value.path === snapshot.path && value.kind === snapshot.kind);
+    if (!place) throw Error('This place was removed or changed type. Your entered details are kept.');
+    const patch = placeEditPatch(snapshot, values, place.properties);
+    assertPlaceEditComparison(snapshot, patch, place.properties, values);
+    const listing = patch.google_maps_url;
+    if (typeof listing === 'string' && listing && places.some(other => other.path !== place.path && sameGoogleListing(listing, propertyText(other.properties.google_maps_url)))) throw Error('That Google Maps listing already belongs to another place in this notebook. Open that place before changing the link.');
+    if ((await this.outings.list()).some(outing => outing.operation?.sourcePath === snapshot.path)) throw Error('Finish the interrupted outing visit save for this place before editing its details.');
+  }
+  /** One atomic property patch and portable receipt; retry never replays an applied edit. */
+  async savePlaceEdit(snapshot: PlaceEditSnapshot, values: PlaceEditValues, operationId: string, expectedDraftRevision?: string): Promise<void> {
+    return this.serial(async () => {
+      if (!/^[a-zA-Z0-9-]{8,100}$/.test(operationId)) throw Error('Invalid place edit identity.');
+      if (!isPlaceEditPreparation({ snapshot, values, section: 'basics' }, (path): path is string => typeof path === 'string' && this.scoped(path))) throw Error('Place editor details are invalid or belong to another notebook.');
+      const fingerprint = await hashText(JSON.stringify({ kind: snapshot.kind, properties: snapshot.properties, values }));
+      if (expectedDraftRevision !== undefined) {
+        const draft = await this.preparations.get(operationId);
+        if (!draft || draft.kind !== 'place-edit' || draft.phase !== 'completing' || draft.revision !== expectedDraftRevision || JSON.stringify(draft.data.snapshot) !== JSON.stringify(snapshot) || JSON.stringify(draft.data.values) !== JSON.stringify(values)) throw Error('This place edit draft changed, was discarded or was removed. Your entered details are kept; reopen saved work before applying.');
+      }
+      const file = this.file(snapshot.path), raw = await this.app.vault.read(file), initial = readNote(raw).properties;
+      const previous = placeEditReceiptFor(initial.place_edit_receipts, operationId);
+      if (previous) { if (previous.fingerprint !== fingerprint) throw Error('This saved edit already finished with different details. Reopen Edit place before making another change.'); return; }
+      await this.validatePlaceEdit(snapshot, values);
+      await this.app.vault.process(file, current => {
+        this.guard(file.path); if (file.path !== snapshot.path) throw Error('This place moved while saving. Your entered details are kept; reopen Edit place.');
+        const properties = readNote(current).properties;
+        const receipt = placeEditReceiptFor(properties.place_edit_receipts, operationId);
+        if (receipt) { if (receipt.fingerprint !== fingerprint) throw Error('This saved edit already finished with different details.'); return current; }
+        if (properties.place_edit_receipts !== undefined && !isUnknownArray(properties.place_edit_receipts)) throw Error('Saved place edit receipts need review before another edit can be recorded.');
+        const tags = isUnknownArray(properties.tags) ? properties.tags : [];
+        const kind = tags.includes('sourcing-source') || tags.includes('charity-shop') ? 'shop' : tags.includes('parking') ? 'parking' : null;
+        if (kind !== snapshot.kind) throw Error('This place changed type. Reopen Edit place.');
+        const patch = placeEditPatch(snapshot, values, properties);
+        assertPlaceEditComparison(snapshot, patch, properties, values);
+        for (const [key, value] of Object.entries(patch)) current = updateNoteProperty(current, key, value);
+        const receipts = isUnknownArray(properties.place_edit_receipts) ? properties.place_edit_receipts : [];
+        return updateNoteProperty(current, 'place_edit_receipts', [...receipts, { id: operationId, fingerprint, appliedAt: new Date().toISOString(), fields: Object.keys(patch) }]);
+      });
+    });
+  }
   async updateAssessment(path: string, update: { rating?: number; comments?: string; shortlist?: boolean }): Promise<void> {
     return this.serial(async () => {
       if (!(await this.listPlaces()).some(p => p.path === path && p.kind === 'shop')) throw new Error('Choose a shop note.');
@@ -707,11 +764,22 @@ export class SourcingStore {
       if (linkPath(source.properties.parking_location) === parkingPath) await this.prefer(shopPath, '');
     });
   }
-  private async movable(): Promise<void> {
+  private async assertPlaceEditMovesAllowed(affected?: ReadonlySet<string>): Promise<void> {
+    for (const draft of (await this.preparations.inspect()).drafts) {
+      if (draft.kind !== 'place-edit') continue;
+      const draftPath = this.paths.drafts + '/' + draft.id + '.json';
+      if (affected && !affected.has(draft.data.snapshot.path) && !affected.has(draftPath)) continue;
+      const file = this.app.vault.getAbstractFileByPath(draft.data.snapshot.path);
+      if (!isFile(file)) continue;
+      if (placeEditReceiptFor(readNote(await this.app.vault.read(file)).properties.place_edit_receipts, draft.id)) throw Error('Finish the saved place edit for ' + draft.data.snapshot.name + ' before moving its record or affected links. Reopen Edit place and choose Save place to finish without replaying its changes.');
+    }
+  }
+  private async movable(affected?: ReadonlySet<string>): Promise<void> {
     this.writable();
     if ((await this.outings.list()).some(outing => outing.operation)) throw new Error('Resume the unfinished outing visit save before moving notes.');
     if ((await this.visits.pendingOperations()).length) throw new Error('Finish the saved visit operation before moving notes.');
-    if ((await this.preparations.inspect()).drafts.some(draft => draft.phase === 'completing')) throw new Error('Finish the saved preparation before moving notes.');
+    if ((await this.preparations.inspect()).drafts.some(draft => draft.phase === 'completing' && draft.kind !== 'place-edit')) throw new Error('Finish the saved preparation before moving notes.');
+    await this.assertPlaceEditMovesAllowed(affected);
   }
   async previewNotebookMove(newRoot: string): Promise<MovePreview> {
     if (this.mode === 'examples') throw new Error('Notebook moves are shown as worked examples; practice records stay together inside Examples.');
@@ -750,6 +818,7 @@ export class SourcingStore {
         const practice = new SourcingStore(this.app, state.settings, async () => {}, { mode: 'examples' });
         if ((await practice.outings.list()).some(outing => outing.operation)) throw new Error('Resume the unfinished practice outing visit before moving the notebook.');
         if ((await practice.visits.pendingOperations()).length) throw new Error('Finish the saved practice visit operation before moving the notebook.');
+        await practice.assertPlaceEditMovesAllowed();
         const entry = preview.entries.find(entry => entry.from === practiceStatePath);
         if (!entry) throw new Error('The practice state is missing from this move.');
         const content = remapExamplesState(raw, root + '/Examples', targetRoot + '/Examples', preview.entries);
@@ -772,7 +841,7 @@ export class SourcingStore {
     return report;
   }
   async previewLocalityMove(path: string, newName: string, parentPath = ''): Promise<MovePreview> {
-    await this.movable();
+    await this.movable(new Set());
     const name = validLocalityName(newName), localities = await this.listLocalities(), current = localities.find(l => l.path === path);
     if (!current) throw new Error('Choose an existing area.');
     const descendants = localitySubtree(path, localities);
@@ -815,11 +884,12 @@ export class SourcingStore {
       if (asset && isFile(file) && asset.hash === await hashText(await this.app.vault.read(file))) content[from] = this.contextBase(baseText(this.root, undefined, mapping.get(locality.path), this.app.vault.getName()), mapping.get(from) ?? from);
     }
     const preview = await prepareMove(this.app, this.settings, { ...this.moveOptions(), kind: 'locality', toRoot: this.root, mapping, prefixes, content, locality: { path, name, parentPath } });
+    await this.assertPlaceEditMovesAllowed(new Set(preview.entries.filter(entry => entry.from !== entry.to || entry.text !== undefined).map(entry => entry.from)));
     return preview;
   }
   async moveLocality(path: string, newName: string, parentPath = '', preview?: MovePreview): Promise<MoveReport> {
     return this.serial(async () => {
-      await this.movable();
+      await this.movable(new Set());
       const plan = preview ?? await this.previewLocalityMove(path, newName, parentPath);
       if (plan.kind !== 'locality' || plan.locality?.path !== path || plan.locality.name !== validLocalityName(newName) || plan.locality.parentPath !== parentPath) throw new Error('Preview this area move again.');
       return this.executePlan(plan);
@@ -830,7 +900,7 @@ export class SourcingStore {
     return JSON.stringify({ town: selection.town.trim(), locality: selection.locality.trim(), townPath: selection.townPath || '', localityPath: selection.localityPath || '' });
   }
   async previewPlaceAreaChange(path: string, selection: AreaSelection): Promise<MovePreview> {
-    await this.movable();
+    await this.movable(new Set());
     const place = (await this.listPlaces()).find(record => record.path === path);
     if (!place) throw new Error('Choose a saved source or parking note.');
     const area = await this.planArea(selection);
@@ -844,6 +914,7 @@ export class SourcingStore {
       kind: 'place-area', toRoot: this.root, mapping, content: { [path]: content },
       prefixes: [[path, target], [path.replace(/\.md$/, ''), target.replace(/\.md$/, '')]],
     });
+    await this.assertPlaceEditMovesAllowed(new Set(preview.entries.filter(entry => entry.from !== entry.to || entry.text !== undefined).map(entry => entry.from)));
     preview.areaChange = { sourcePath: path, selection: structuredClone(selection), targetLocalityPath: area.leaf.path, creations: area.creations };
     preview.creations = area.creations;
     if (area.creations.length) preview.warnings.push('Missing areas and their maps will be created on Apply. If the file move later fails, those new areas remain available.');
@@ -851,7 +922,7 @@ export class SourcingStore {
   }
   async changePlaceArea(path: string, selection: AreaSelection, preview?: MovePreview): Promise<MoveReport> {
     return this.serial(async () => {
-      await this.movable();
+      await this.movable(new Set());
       const approved = preview ?? await this.previewPlaceAreaChange(path, selection);
       if (approved.kind !== 'place-area' || approved.areaChange?.sourcePath !== path || this.areaSelectionKey(approved.areaChange.selection) !== this.areaSelectionKey(selection)) throw new Error('Preview this area change again.');
       await validateMovePreview(this.app, this.settings, approved);

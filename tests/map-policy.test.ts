@@ -41,3 +41,12 @@ test('numeric sourcing colour uses half-star scale independently of Google score
   assert.equal(ratingColour(5),'#16a34a'); assert.equal(ratingColour(4.3),'#2563eb');
   assert.equal(ratingColour(6),'#2563eb'); assert.equal(ratingColour(-1),'#2563eb');
 });
+
+
+test('a closed focused place remains visible on its detail map while browsing excludes it by default', () => {
+  const closed = place('Notebook/Places/Closed.md', [1, 2], { shop_closed: true });
+  const otherClosed = place('Notebook/Places/Other closed.md', [1, 3], { shop_closed: true });
+  assert.deepEqual(visiblePlaces([closed, otherClosed], 'Notebook'), []);
+  assert.deepEqual(visiblePlaces([closed, otherClosed], 'Notebook', { focusPath: closed.path }), [closed]);
+  assert.deepEqual(visiblePlaces([closed, otherClosed], 'Notebook', { includeClosed: true }), [closed, otherClosed]);
+});

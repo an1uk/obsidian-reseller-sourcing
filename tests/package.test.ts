@@ -154,7 +154,7 @@ test('release preparation requires the exact tag and hashes before handing off f
 test('release metadata is shared across platforms while Clipper release stays independently versioned', async () => {
   const readJson = async (name: string) => JSON.parse(await fs.readFile(path.join(project, name), 'utf8'));
   const [pkg, lock, manifest, versions] = await Promise.all(['package.json', 'package-lock.json', 'manifest.json', 'versions.json'].map(readJson));
-  assert.equal(pkg.version, '0.11.1');
+  assert.equal(pkg.version, '0.12.0');
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[''].version, pkg.version);
   assert.equal(manifest.version, pkg.version);

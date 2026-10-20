@@ -1,6 +1,20 @@
-# Validation: Reseller sourcing 0.11.1
+# Validation: Reseller sourcing 0.12.0
 
 One shared desktop/Android plugin, ID **charity-sourcing**, requiring Obsidian **1.14.4** or newer. Clipper templates remain **v0.4.2**. This document distinguishes repeatable public-tree checks from historical native and physical acceptance. Private captures, screenshots, device details, vault paths and test harnesses are not included in the repository.
+
+## 0.12.0 verification
+
+On 20 October 2026, the exact staged public tree was exported into a clean directory, installed from its lockfile, and verified without private development drivers. Official source/CSS lint and type checking passed. The portable suite passed **557 tests with zero failures**, with the same three optional integration skips described below. Packaging retained all required runtime licence notices, and the production dependency audit reported zero vulnerabilities.
+
+**20 native place-workflow scenarios passed** in an isolated desktop vault: source and parking maps in Reading view and Live Preview, closed and missing pins, numeric column sorting, combined filters, list/map parity, explicit nearby references, outing criteria with no automatic selections, durable edit drafts, validation, concurrent prose, conflict choices, reversion persistence and live overview refresh. **Three final stylesheet scenarios passed**, covering 360/390/420 px light/dark cards and focused coordinate entry at keyboard height. Tested JavaScript and manifest bytes matched the final package; the layout repeat used the final stylesheet.
+
+The existing **14 native workspace scenarios** and **five settings/pop-out scenarios** also passed. Three additional native organisation-handoff checks verified draft preservation, released editing guards and unchanged records. The unrelated vault snapshots remained unchanged. These checks are scoped functional and layout acceptance, not an accessibility certification.
+
+Eight physical Android scenarios passed in a separate test vault over Wi-Fi debugging: all four source/parking Reading and Live Preview map combinations, map panning and popup dismissal, fictional destination previews, phone filters/sorting/Nearby without automatic location requests, keyboard-open coordinate entry with reachable save controls, retained drafts, explicit contact/name/pin saves, context isolation and cold reopening. The canonical installation preserved 158 notebook text files, preferences and saved work, with all three installed assets verified by SHA-256.
+
+A final three-scenario physical check against the released build verified area/parking handoffs, draft retention, cold reopening, maps and reachable keyboard save controls. The final installation preserved 159 notebook files, preferences and saved work, and its three asset hashes were verified again.
+
+Physical conflict-review acceptance, interactive Chrome capture, real vault synchronisation and live Google routing-capacity checks remain outstanding. Conflict review passed the isolated native desktop tests. Source checkouts use canonical LF line endings so fresh Windows and Linux builds can reproduce the same three plugin files.
 
 ## Portable checks
 
@@ -64,6 +78,6 @@ Physical testing identified toolbar overlap and an oversized popup hiding naviga
 
 ## Remaining acceptance
 
-Interactive Chrome capture, real desktop–Android notebook sync, repeated live Google Maps destination-capacity tests and location-permission flows remain outstanding. Phone checks above cover the 0.11.0 workspace and do not establish every browser, handler or device configuration. Google Maps export profile limits are targets rather than a guarantee that every receiving handler accepts the full route; review imported destinations before travelling.
+Interactive Chrome capture, real desktop–Android notebook sync, repeated live Google Maps destination-capacity tests and location-permission flows remain outstanding. Historical phone checks cover earlier workspace releases and do not establish every browser, handler or device configuration. Current-version acceptance is identified separately above. Google Maps export profile limits are targets rather than a guarantee that every receiving handler accepts the full route; review imported destinations before travelling.
 
 The [0.11.0 release](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.11.0) provides the shared desktop/Android assets, universal ZIP and SHA-256 checksums. It is published as a standard GitHub release, with its early-development status described in the README. It is not a Community Plugins submission. Device-specific acceptance drivers, deployment helpers and private evidence remain local and are not required for the public build.

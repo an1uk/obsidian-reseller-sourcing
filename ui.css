@@ -1807,6 +1807,14 @@
   white-space:normal;
 }
 
+.charity-place-editor .modal-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .is-mobile.is-android .charity-input-modal-container > .modal > .modal-content {
   min-height:0;
   overflow-y:auto;
@@ -1912,4 +1920,207 @@
 .charity-locality-list li button:first-child {
   text-align:left;
   flex:1;
+}
+
+/* Responsive place browsing stays within the host theme and pane width. */
+.charity-places-browser {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.charity-places-browser > input[type="search"] {
+  width: 100%;
+  min-height: 44px;
+  margin-block: var(--size-4-2);
+}
+
+.charity-places-cards {
+  display: grid;
+  gap: var(--size-4-2);
+}
+
+.charity-place-card {
+  padding: var(--size-4-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  overflow-wrap: anywhere;
+}
+
+.charity-places-table-wrap {
+  display: none;
+}
+
+.charity-places-browser .charity-place-name {
+  height: auto;
+  min-height: 44px;
+  max-width: 100%;
+  padding: var(--size-4-2);
+  white-space: normal;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.charity-places-browser .charity-actions,
+.charity-filter-chips,
+.charity-filter-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  margin-block: var(--size-4-2);
+}
+
+.charity-workspace .charity-workspace-body.charity-places-browser button {
+  min-height: 44px;
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+}
+
+.charity-workspace .charity-places-browser button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.charity-workspace .charity-places-browser .charity-filter-chips button {
+  border-radius: var(--radius-l);
+  font-size: var(--font-ui-small);
+}
+
+.charity-place-results-status {
+  margin-block: var(--size-4-3);
+  color: var(--text-muted);
+}
+
+.charity-nearby-radius {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+}
+
+.charity-workspace .charity-places-browser .charity-nearby-radius input {
+  width: 8em;
+  min-height: 44px;
+}
+
+@container (min-width: 760px) {
+  .charity-places-cards {
+    display: none;
+  }
+
+  .charity-places-table-wrap {
+    display: block;
+    width: 100%;
+  }
+
+  .charity-places-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: var(--font-ui-small);
+  }
+
+  .charity-places-table th,
+  .charity-places-table td {
+    padding: var(--size-4-2);
+    vertical-align: top;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--background-modifier-border);
+  }
+
+  .charity-places-table th:first-child,
+  .charity-places-table td:first-child {
+    width: 27%;
+  }
+
+  .charity-places-table th button {
+    width: 100%;
+    padding: var(--size-4-1);
+    box-shadow: none;
+    background: transparent;
+    text-align: start;
+  }
+
+  .charity-places-table th[aria-sort="ascending"],
+  .charity-places-table th[aria-sort="descending"] {
+    background: var(--background-secondary);
+  }
+
+  .charity-place-takeaway {
+    margin: var(--size-4-1) 0;
+  }
+}
+
+/* Place editing keeps fields scrollable above its always-visible actions. */
+
+
+.is-mobile.is-android .charity-input-modal-container > .modal.charity-place-editor > .modal-content {
+  overflow: hidden;
+}
+
+.charity-place-edit-fields {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-inline: var(--size-4-1);
+  scroll-padding-block: var(--size-4-3);
+}
+
+.charity-place-editor .charity-modal-footer.charity-actions {
+  position: static;
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--size-4-2);
+  align-items: center;
+  margin: var(--size-4-2) 0 0;
+  padding-block: var(--size-4-2) 0;
+}
+
+.charity-preparation-modal.charity-place-editor .charity-modal-footer > button {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  white-space: normal;
+  grid-row: 1;
+}
+
+.charity-place-editor .charity-modal-footer > .mod-cta {
+  grid-column: 1;
+}
+
+.charity-place-editor .charity-modal-footer > button:not(.mod-cta) {
+  grid-column: 2;
+}
+
+.charity-place-editor .charity-modal-footer > .charity-save-status {
+  grid-column: 1;
+  grid-row: 2;
+  overflow-wrap: anywhere;
+}
+
+.charity-place-editor .charity-modal-footer > .charity-details {
+  grid-column: 2;
+  grid-row: 2;
+  margin: 0;
+}
+
+.charity-preparation-modal.charity-place-editor summary {
+  min-height: 44px;
+  box-sizing: border-box;
+  padding-block: var(--size-4-2);
+}
+
+.charity-place-edit-fields :is(input, textarea, select) {
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+}
+
+.charity-workspace .charity-places-browser button[aria-pressed="true"] {
+  background: var(--background-secondary-alt);
+  color: var(--text-normal);
+  box-shadow: inset 0 0 0 1px var(--interactive-accent);
+  font-weight: var(--font-semibold);
 }

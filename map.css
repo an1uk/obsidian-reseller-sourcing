@@ -368,3 +368,58 @@
   outline:2px solid var(--interactive-accent);
   outline-offset:2px;
 }
+
+/* Inline location notes retain their ordinary note width. */
+.charity-place-summary {
+  display:flex;
+  flex-direction:column;
+  gap:var(--size-4-2);
+}
+
+.charity-place-summary-map {
+  width:100%;
+  min-width:0;
+}
+
+.charity-place-summary-content p {
+  margin-block:var(--size-4-2);
+}
+
+.charity-place-summary-assessment {
+  font-weight:var(--font-semibold);
+}
+
+.charity-place-summary-actions {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:var(--size-4-2);
+  padding-block:var(--size-4-1);
+}
+
+.charity-place-summary-actions :is(a,button) {
+  min-height:36px;
+  display:inline-flex;
+  align-items:center;
+  white-space:normal;
+}
+
+.charity-place-location-empty {
+  padding:var(--size-4-4);
+  background:var(--background-secondary);
+  border:1px solid var(--background-modifier-border);
+  border-radius:var(--radius-m);
+}
+
+.charity-place-location-label {
+  font-weight:var(--font-semibold);
+}
+
+.charity-map-container button.charity-place-marker-closed {
+  border-style:dashed;
+  filter:grayscale(1);
+}
+
+.is-mobile .charity-place-summary-actions :is(a,button) {
+  min-height:44px;
+}

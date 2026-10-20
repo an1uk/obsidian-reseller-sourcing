@@ -1,4 +1,6 @@
 import { renderHome, chooseVisitSource } from './ui/home';
+import { renderPlaceSummary } from './ui/place-summary';
+import { openPlaceEditor } from './place-edit/editor';
 import { renderNotebookNavigation } from './ui/navigation';
 import { rememberRenderState } from './ui/render-state';
 import { renderVisitsHub, embeddedVisitsHubState } from './ui/visit-history';
@@ -9,7 +11,7 @@ import { FileSystemAdapter, MarkdownRenderChild, Modal, Notice, Platform, Plugin
 import { DEFAULT_SETTINGS, type Coordinates, type PlaceKind, type Settings } from './types';
 import { SourcingStore } from './storage/store';
 import { createMapRegistration, MAP_VIEW_TYPE, shutdownMapRuntime, type MapHost, type PlaceMap } from './map';
-import { CaptureModal, LocalityModal, NotebookMoveModal, SetupModal, VisitModal, button, errorText, manualDraft, pickCapture, pickPlace, renderPlace, renderPracticeSettings, releasePracticeSettingsOwner } from './ui';
+import { CaptureModal, ChangeAreaModal, LocalityModal, NotebookMoveModal, SetupModal, VisitModal, button, errorText, manualDraft, pickCapture, pickPlace, renderPlace, renderPracticeSettings, releasePracticeSettingsOwner } from './ui';
 import { googleMapsUrl, navigationUrl, resolveParking, validateRootPath } from './domain';
 import { registerPlacePropertiesDefault } from './ui/properties';
 import { ClipperSetupModal, showClipperUpdateNotice } from './ui/clipper-setup';
@@ -300,14 +302,31 @@ class NotebookBlock extends MarkdownRenderChild {
     if(!context) { this.disposeRendered(); this.containerEl.empty(); this.containerEl.createEl('p',{text:'This notebook is unavailable. Deleted examples are not recreated automatically.',cls:'charity-empty-state'}); return; }
     if(this.context !== context) { this.disposeRendered(); this.context=context; }
     const restoreState = rememberRenderState(this.containerEl, this.path);
-    if (['home', 'place', 'outing', 'outings', 'visit', 'visits', 'locality', 'localities'].includes(view)) {
+    if (['home', 'outing', 'outings', 'visit', 'visits', 'locality', 'localities'].includes(view)) {
       if (this.rendered) this.removeChild(this.rendered);
       this.rendered = undefined; this.map = undefined; this.containerEl.empty();
       button(this.containerEl, view === 'home' ? 'Open Sourcing workspace' : 'Open in Sourcing workspace', () => context.openFile(this.path), true);
       return;
     }
-    if (view === 'place' && this.rendered && this.map) {
-      try { await renderPlace(context, this.rendered, this.rendered.containerEl, this.path, this.map, () => generation === this.generation); } catch (e) { new Notice(errorText(e)); } finally { if (generation === this.generation) restoreState(); }
+    if (view === 'place') {
+      if (!this.rendered) {
+        this.containerEl.empty();
+        const wrapper = this.containerEl.createDiv('charity-sourcing');
+        this.rendered = new MarkdownRenderChild(wrapper); this.addChild(this.rendered);
+      }
+      try {
+        const map = await renderPlaceSummary(context, this.rendered, this.rendered.containerEl, this.path, {
+          existingMap: this.map, isCurrent: () => generation === this.generation,
+          onEdit: section => openPlaceEditor(context, this.path, {
+            section: section ?? 'basics',
+            changeArea: () => new ChangeAreaModal(context, this.path).open(),
+            manageParking: () => openSourcingWorkspace(this.plugin, context, { screen: 'place', path: this.path, section: 'details' }),
+          }),
+          onOpenWorkspace: () => context.openFile(this.path),
+        });
+        if (generation === this.generation) this.map = map;
+      } catch (error) { if (generation === this.generation) new Notice(errorText(error)); }
+      finally { if (generation === this.generation) restoreState(); }
       return;
     }
     if (this.rendered) this.removeChild(this.rendered);

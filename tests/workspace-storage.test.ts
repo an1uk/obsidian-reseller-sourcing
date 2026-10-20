@@ -45,7 +45,7 @@ test('preflight failures create no areas or partial records and name collisions 
 });
 test('preparation debounce storage preserves unknown count, stage and draft values across reopen',async()=>{
   const f=await ready(),d=draft(preparation(f.source.path));const saved=await f.store.preparations.save(d,'');
-  assert.match(saved.revision,/^[a-f0-9]{64}$/);assert.equal((await f.store.preparations.get(d.id))?.data.step,2);
+  assert.match(saved.revision,/^[a-f0-9]{64}$/);const opened = await f.store.preparations.get(d.id);assert.equal(opened?.kind,'outing');if(opened?.kind==='outing')assert.equal(opened.data.step,2);
   const reloaded=await f.store.preparations.inspect();assert.equal(reloaded.drafts.length,1);assert.deepEqual(reloaded.warnings,[]);
   const raw=await f.vault.read(f.vault.getAbstractFileByPath(f.store.paths.drafts+'/'+d.id+'.json') as TFile);assert.match(raw,/\[\[Reseller sourcing\/Places/);
 });

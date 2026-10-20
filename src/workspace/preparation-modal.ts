@@ -16,7 +16,7 @@ export abstract class PreparationModal<T> extends Modal {
   private signature = '';
   private finishEditing?: () => void;
   private background = () => { if (this.contentEl.ownerDocument.hidden) void this.flush().catch(e => this.failure(e)); };
-  constructor(protected context: NotebookContext, private kind: 'place' | 'outing', private seed: T, private draftId?: string) { super(context.app); }
+  constructor(protected context: NotebookContext, private kind: PreparationDraft['kind'], private seed: T, private draftId?: string) { super(context.app); }
   abstract renderStep(): Promise<void> | void;
   protected abstract meaningful(): boolean;
   protected abstract finish(): Promise<void>;
@@ -70,7 +70,7 @@ export abstract class PreparationModal<T> extends Modal {
   }
   protected flush(): Promise<void> {
     this.contentEl.win.clearTimeout(this.timer);
-    if (!this.draft || this.draft.phase !== 'editing' || !this.meaningful()) return this.queue;
+    if (!this.draft || this.draft.phase !== 'editing' || !this.meaningful() && !this.draft.revision) return this.queue;
     const data = structuredClone(this.draft.data), signature = JSON.stringify(data);
     const run = async () => {
       if (signature === this.signature) return;
@@ -100,6 +100,22 @@ export abstract class PreparationModal<T> extends Modal {
       copy.readOnly = true; copy.value = JSON.stringify(this.draft?.data ?? this.seed, null, 2);
       button(section, 'Close without replacing saved work', () => { this.closed = true; super.close(); });
     }
+  }
+  /** Hand off only after preserving this form and releasing its organisation guard. */
+  protected async closeAndContinue(run: () => Promise<void> | void): Promise<void> {
+    if (this.closed || this.busy) return;
+    this.setBusy(true);
+    try {
+      await this.flush();
+      if (this.closed) return;
+      this.closed = true;
+      const finish = this.finishEditing; this.finishEditing = undefined; finish?.();
+      super.close();
+      await run();
+    } catch (error) {
+      if (this.closed) throw error;
+      this.failure(error);
+    } finally { if (!this.closed) this.setBusy(false); }
   }
   close(): void {
     if (this.closed || this.busy) return;

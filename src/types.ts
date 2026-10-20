@@ -1,9 +1,10 @@
 import type { DistanceUnit } from './units';
 export type Coordinates = [number, number];
 export type PlaceKind = 'shop' | 'parking';
+export interface PlacePersonalDetails { display_name?: string; opening_notes?: string; }
 export interface PlaceRecord {
   path: string; name: string; kind: PlaceKind; locality: string;
-  coordinates: Coordinates | null; properties: Record<string, unknown>;
+  coordinates: Coordinates | null; properties: Record<string, unknown> & PlacePersonalDetails;
 }
 export interface LocalityRecord { path: string; name: string; parentPath: string; segments: string[]; label: string; }
 export interface AreaSelection { town: string; locality: string; townPath?: string; localityPath?: string; }

@@ -20,9 +20,10 @@ export function ratingColour(rating: unknown): string {
   return !Number.isFinite(n) || n <= 0 || n > 5 || !Number.isInteger(n * 2) ? '#2563eb' : n < 2 ? '#dc2626' : n < 4 ? '#d97706' : '#16a34a';
 }
 export function isWithinRoot(path: string, root: string): boolean { return path.startsWith(root.replace(/\/+$/, '') + '/'); }
-export function visiblePlaces(records: PlaceRecord[], root: string): PlaceRecord[] {
+export interface MapVisibilityOptions { includeClosed?: boolean; focusPath?: string; }
+export function visiblePlaces(records: PlaceRecord[], root: string, options: MapVisibilityOptions = {}): PlaceRecord[] {
   return records.filter(r => isWithinRoot(r.path, root) && validCoordinates(r.coordinates)
-    && (r.kind !== 'shop' || r.properties.shop_closed !== true));
+    && (options.includeClosed || r.path === options.focusPath || r.kind !== 'shop' || r.properties.shop_closed !== true));
 }
 
 /** Camera changes from the user pause data-driven fitting, but never remove pins. */

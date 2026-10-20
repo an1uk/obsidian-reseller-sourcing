@@ -1,11 +1,11 @@
-Reseller sourcing 0.11.1 is an early release for desktop and Android.
+Reseller sourcing 0.12.0 is an early release for desktop and Android.
 
-- Searchable, grouped settings preserve existing controls and roll back failed saves.
-- Validated data boundaries and a typed notebook context preserve drafts, recovery and real/example isolation.
-- Scoped CSS and a bounded touch popup replace the mobile style overrides. Copy fallbacks remain selectable.
-- Routine browsing stays within the selected notebook. Right-to-left map text uses MapLibre's built-in support.
-- Official Obsidian source/CSS checks and portable tests run in read-only CI. Trusted version tags attest all five downloads before publication.
+- Restores maps in existing location notes, with focused parking context and clear missing-location controls.
+- Adds Edit place with explicit saving, preserved drafts, personal names and conflict checks.
+- Adds sortable desktop columns and phone cards with a Sort control.
+- Adds area, type, rating, shortlist, status, visits and location filters, presets and optional local nearby searches.
+- Reuses current browsing criteria when choosing an outing, without selecting stops automatically.
 
-Desktop and Android use the same `main.js`, `manifest.json` and `styles.css`, requiring Obsidian 1.14.4 or newer. The ZIP and SHA-256 checksum file remain available for manual installation. Clipper templates remain v0.4.2; no re-import is required.
+The same three plugin files work on desktop and Android. Clipper exports remain v0.4.2; no re-import is needed. Existing records and examples are not reset.
 
-This is a standard release. See [validation and remaining acceptance](https://github.com/an1uk/obsidian-reseller-sourcing/blob/0.11.1/VALIDATION.md) for test scope and known limits. No notebook-schema migration is required. Release 0.11.0 remains available.
+This is a standard release. See [validation and remaining acceptance](https://github.com/an1uk/obsidian-reseller-sourcing/blob/0.12.0/VALIDATION.md) for verified test scope and outstanding checks. Earlier releases remain available.

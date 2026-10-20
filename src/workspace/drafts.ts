@@ -6,17 +6,31 @@ import { hasControlCharacters, isRecord, isUnknownArray } from '../domain/guards
 import { validateCoordinates } from '../domain/coordinates';
 import { validatePlanningOptions } from '../outings/planning';
 import { notebookFiles } from '../storage/files';
+import { isPlaceEditPreparation, placeEditReceiptFor, type PlaceEditPreparation } from '../place-edit/model';
+import { readNote } from '../storage/markdown';
+import { serialisePlaceQuery } from './place-query';
 interface Host { app: App; root(): string; exclusive<T>(run: () => Promise<T>): Promise<T>; folder(path: string): Promise<void>; }
 const fileLike = (v: unknown): v is TFile => !!v && typeof v === 'object' && 'extension' in v;
 const validId = (id: unknown): id is string => typeof id === 'string' && /^[a-zA-Z0-9-]{8,100}$/.test(id);
+const member = (value: unknown, choices: string[]) => typeof value === 'string' && choices.includes(value);
+function queryData(value: unknown, inside: (path: unknown) => path is string): boolean {
+  if (!isRecord(value) || typeof value.text !== 'string' || typeof value.area !== 'string' || value.area && value.area !== 'unassigned' && !inside(value.area) || !member(value.kind, ['all', 'shop', 'parking']) || typeof value.sourceType !== 'string' || !member(value.rating, ['any', 'unrated', 'minimum']) || typeof value.minimumRating !== 'number' || value.minimumRating < .5 || value.minimumRating > 5 || !Number.isInteger(value.minimumRating * 2) || typeof value.shortlist !== 'boolean' || !member(value.status, ['active', 'closed', 'all']) || !member(value.visits, ['any', 'with', 'without']) || !member(value.location, ['any', 'present', 'missing'])) return false;
+  if (value.nearby === undefined) return true;
+  if (!isRecord(value.nearby) || typeof value.nearby.radiusKm !== 'number' || !Number.isFinite(value.nearby.radiusKm) || value.nearby.radiusKm <= 0 || !isRecord(value.nearby.reference)) return false;
+  const reference = value.nearby.reference;
+  if (reference.label !== undefined && typeof reference.label !== 'string') return false;
+  return reference.kind === 'place' ? inside(reference.path) : reference.kind === 'point' ? !!validateCoordinates(reference.coordinates) : reference.kind === 'unavailable';
+}
 function outingData(value: unknown, inside: (path: unknown) => path is string): value is OutingPreparation {
-  if (!isRecord(value) || typeof value.name !== 'string' || !isUnknownArray(value.groups) || value.step !== 1 && value.step !== 2 && value.step !== 3 || !isUnknownArray(value.unresolved) || !value.unresolved.every(inside) || !isRecord(value.filter) || typeof value.filter.text !== 'string' || typeof value.filter.area !== 'string' || value.filter.area && !inside(value.filter.area) || typeof value.filter.shortlist !== 'boolean' || typeof value.filter.type !== 'string' || value.filter.view !== 'list' && value.filter.view !== 'map') return false;
+  if (!isRecord(value) || typeof value.name !== 'string' || !isUnknownArray(value.groups) || value.step !== 1 && value.step !== 2 && value.step !== 3 || !isUnknownArray(value.unresolved) || !value.unresolved.every(inside) || !isRecord(value.filter) || typeof value.filter.text !== 'string' || typeof value.filter.area !== 'string' || value.filter.area && value.filter.area !== 'unassigned' && !inside(value.filter.area) || typeof value.filter.shortlist !== 'boolean' || typeof value.filter.type !== 'string' || value.filter.view !== 'list' && value.filter.view !== 'map') return false;
   for (const group of value.groups) {
     if (!isRecord(group) || typeof group.id !== 'string' || typeof group.parkingPath !== 'string' || group.parkingPath && !inside(group.parkingPath) || !isUnknownArray(group.stops)) return false;
     for (const stop of group.stops) if (!isRecord(stop) || typeof stop.id !== 'string' || !inside(stop.sourcePath) || stop.status !== 'pending' && stop.status !== 'visited' && stop.status !== 'skipped') return false;
   }
   if (value.existingPath !== undefined && !inside(value.existingPath) || value.existingRevision !== undefined && typeof value.existingRevision !== 'string' || value.startAfterSave !== undefined && typeof value.startAfterSave !== 'boolean') return false;
   if (value.planning !== undefined) validatePlanningOptions(value.planning);
+  if (value.placeQuery !== undefined && !queryData(value.placeQuery, inside)) return false;
+  if (value.placeSort !== undefined && (!isRecord(value.placeSort) || !member(value.placeSort.key, ['name', 'area', 'type', 'rating', 'lastVisited', 'shortlist', 'distance']) || value.placeSort.direction !== 'asc' && value.placeSort.direction !== 'desc')) return false;
   return true;
 }
 function placeData(value: unknown, inside: (path: unknown) => path is string): value is PlacePreparation {
@@ -34,7 +48,8 @@ export class PreparationStore {
   private path(id: string) { if (!validId(id)) throw Error('Invalid preparation identity.'); return new NotebookPaths(this.host.root()).drafts + '/' + id + '.json'; }
   private parse(raw: string): PreparationDraft {
     const d: unknown = JSON.parse(raw);
-    const decode = (value: unknown): unknown => isUnknownArray(value) ? value.map(decode) : isRecord(value) ? Object.fromEntries(Object.entries(value).map(([k,v]) => [k, decode(v)])) : typeof value === 'string' && value.startsWith('[[') && value.endsWith(']]') ? linkPath(value) : value;
+    const editorDraft = isRecord(d) && d.kind === 'place-edit';
+    const decode = (value: unknown, key = ''): unknown => isUnknownArray(value) ? value.map(v => decode(v, key)) : isRecord(value) ? Object.fromEntries(Object.entries(value).map(([k,v]) => [k, decode(v, k)])) : typeof value === 'string' && value.startsWith('[[') && value.endsWith(']]') && (!editorDraft || key === 'path') ? linkPath(value) : value;
     if (!isRecord(d) || d.schema !== 1 || !validId(d.id) || d.root !== this.host.root() || typeof d.updatedAt !== 'string' || !Number.isFinite(Date.parse(d.updatedAt)) || typeof d.deferred !== 'boolean' || d.phase !== 'editing' && d.phase !== 'completing' && d.phase !== 'complete' && d.phase !== 'discarded') throw Error('This preparation draft needs review.');
     const root = this.host.root();
     const inside = (p: unknown): p is string => typeof p === 'string' && p.startsWith(root + '/') && !p.includes('\\') && !hasControlCharacters(p, false) && !p.split('/').some(v => !v || v === '..' || v === '.') && !p.startsWith(root + '/Examples/');
@@ -44,6 +59,7 @@ export class PreparationStore {
     const envelope = { schema: 1 as const, id: d.id, root, updatedAt: d.updatedAt, deferred: d.deferred, phase, revision: '', ...(resultPath === undefined ? {} : { resultPath }) };
     if (d.kind === 'outing' && outingData(data, inside)) return { ...envelope, kind: 'outing', data };
     if (d.kind === 'place' && placeData(data, inside)) return { ...envelope, kind: 'place', data };
+    if (d.kind === 'place-edit' && isPlaceEditPreparation(data, inside)) return { ...envelope, kind: 'place-edit', data };
     throw Error('This preparation draft needs review: fields are invalid or belong to another notebook.');
   }
   async get(id: string): Promise<PreparationDraft | undefined> {
@@ -69,7 +85,9 @@ export class PreparationStore {
     });
   }
   private async write<D extends PreparationDraft>(draft: D, expected: string): Promise<D> {
-    const { revision: _revision, ...data } = structuredClone(draft);
+    const safeDraft: PreparationDraft = structuredClone(draft);
+    if (safeDraft.kind === 'outing' && safeDraft.data.placeQuery) safeDraft.data.placeQuery = serialisePlaceQuery(safeDraft.data.placeQuery);
+    const { revision: _revision, ...data } = safeDraft;
     const encode = (value: unknown, key = ''): unknown => isUnknownArray(value) ? value.map(v => encode(v, key)) : isRecord(value) ? Object.fromEntries(Object.entries(value).map(([k,v]) => [k, encode(v,k)])) : typeof value === 'string' && value.startsWith(draft.root + '/') && (key.endsWith('Path') || ['area','path','unresolved','linkedSource'].includes(key)) ? wiki(value) : value;
     const encoded = { ...data, data: encode(data.data), ...(data.resultPath ? { resultPath: wiki(data.resultPath) } : {}) };
     const raw = JSON.stringify(encoded, null, 2) + '\n'; this.parse(raw);
@@ -80,7 +98,7 @@ export class PreparationStore {
       const before = await this.host.app.vault.read(file); if (await hashText(before) !== expected) throw Error('Preparation draft changed.');
       await this.host.app.vault.process(file, current => { if (current !== before) throw Error('Preparation draft changed.'); return raw; });
     }
-    return { ...draft, revision: await hashText(raw) };
+    return { ...draft, data: safeDraft.data, revision: await hashText(raw) };
   }
   async transition(id: string, expected: string, phase: PreparationDraft['phase'], resultPath?: string): Promise<PreparationDraft> {
     return this.host.exclusive(async () => {
@@ -88,6 +106,16 @@ export class PreparationStore {
       if (draft.phase === 'complete' || draft.phase === 'discarded') throw Error('This preparation has already closed.');
       if (draft.phase === 'completing' && phase !== 'complete' && phase !== 'completing') throw Error('Finish the saved completion before changing this draft.');
       return this.write({ ...draft, phase, ...(resultPath ? { resultPath } : {}), updatedAt: new Date().toISOString() }, expected);
+    });
+  }
+  /** A failed comparison can reopen an edit only while its atomic note receipt is absent. */
+  async reopenPlaceEdit(id: string, expected: string): Promise<PreparationDraft<PlaceEditPreparation>> {
+    return this.host.exclusive(async () => {
+      const draft = await this.get(id);
+      if (!draft || draft.kind !== 'place-edit' || draft.phase !== 'completing' || draft.revision !== expected) throw Error('This place edit draft changed. Reopen saved work.');
+      const file = this.host.app.vault.getAbstractFileByPath(draft.data.snapshot.path);
+      if (fileLike(file) && placeEditReceiptFor(readNote(await this.host.app.vault.read(file)).properties.place_edit_receipts, id)) throw Error('This place edit was already saved. Finish the saved edit to close its draft without replaying changes.');
+      return this.write({ ...draft, phase: 'editing' }, expected);
     });
   }
   async defer(id: string, expected: string): Promise<void> {

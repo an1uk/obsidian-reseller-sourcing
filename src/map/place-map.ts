@@ -19,6 +19,7 @@ export interface PlaceMapOptions {
   focusPath?: string;
   locality?: boolean;
   readOnly?: boolean;
+  includeClosed?: boolean;
   onPick?: (coordinates: Coordinates) => void;
   selectionLabel?: string;
 }
@@ -184,7 +185,7 @@ export class PlaceMap extends Component {
   private shopPath(): string | undefined {
     return this.records.find(r => r.path === this.options.focusPath)?.kind === 'shop' ? this.options.focusPath : undefined;
   }
-  private places(): PlaceRecord[] { return visiblePlaces(this.records, this.host.settings.root); }
+  private places(): PlaceRecord[] { return visiblePlaces(this.records, this.host.settings.root, this.options); }
 
   setPickMode(mode: 'parking' | 'move' | 'copy' | null): void {
     if (this.options.readOnly && mode && mode !== 'copy') return;
@@ -236,10 +237,11 @@ export class PlaceMap extends Component {
     for (const place of this.places()) {
       if (!validCoordinates(place.coordinates)) continue;
       const button = createEl('button', {cls: 'charity-place-marker'});
-      const label = `${place.name}${place.kind === 'shop' ? ': ' + formatRating(place.properties.rating) : ': Parking'}`;
+      const label = `${place.name}${place.kind === 'shop' ? ': ' + formatRating(place.properties.rating) : ': Parking'}${place.properties.shop_closed === true ? ' (permanently closed)' : ''}`;
       button.setAttribute('aria-label', label);
       button.title = label;
       button.style.setProperty('--charity-marker-colour', place.kind === 'parking' ? '#7c3aed' : ratingColour(place.properties.rating));
+      button.toggleClass('charity-place-marker-closed', place.properties.shop_closed === true);
       setIcon(button, place.kind === 'parking' ? 'square-parking' : 'store');
       if (place.kind === 'shop') {
         const score = button.createSpan('charity-marker-score');
@@ -270,6 +272,7 @@ export class PlaceMap extends Component {
       else runMapAction(() => this.host.app.workspace.openLinkText(place.path, '', false));
     });
     if (place.kind === 'shop') content.createEl('p', {text:formatRating(place.properties.rating)});
+    if (place.properties.shop_closed === true) content.createEl('p', {text:'Permanently closed', cls:'charity-hint'});
     for (const [key, label] of (place.kind === 'shop' ? [['comments','Takeaway'],['last_visited','Last visit']] : [['parking_cost','Cost'],['parking_availability','Usual availability']])) {
       const value = place.properties[key];
       if ((typeof value === 'string' && value !== '') || typeof value === 'number' || typeof value === 'boolean') content.createEl('p', {text:`${label}: ${String(value)}`});

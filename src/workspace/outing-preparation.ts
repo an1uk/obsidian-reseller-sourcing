@@ -11,14 +11,15 @@ import { localDate } from '../storage/markdown';
 import { proposeOutingGroups } from '../outings/domain';
 import { OutingPlannerModal } from '../ui/outing-planner';
 import { mountPlaceMap } from '../map';
+import { defaultPlaceQuery, normalisePlaceQuery, normalisePlaceSort, queryPlaces, serialisePlaceQuery, type PlaceQuery, type PlaceSort } from './place-query';
 
 const stops = (groups: OutingGroup[]) => groups.flatMap(g => g.stops);
 export class OutingPreparationModal extends PreparationModal<OutingPreparation> {
-  private places: PlaceRecord[] = []; private areas: LocalityRecord[] = [];
-  constructor(context: NotebookContext, existingPath?: string, draftId?: string) {
-    super(context, 'outing', { name: '', groups: [], step: 1, unresolved: [], filter: { text: '', area: '', shortlist: false, type: '', view: 'list' }, ...(existingPath ? { existingPath } : {}) }, draftId);
+  private places: PlaceRecord[] = []; private areas: LocalityRecord[] = []; private visited = new Set<string>();
+  constructor(context: NotebookContext, existingPath?: string, draftId?: string, criteria?: { query: PlaceQuery; sort: PlaceSort }) {
+    super(context, 'outing', { name: '', groups: [], step: 1, unresolved: [], filter: { text: '', area: '', shortlist: false, type: '', view: 'list' }, ...(existingPath ? { existingPath } : {}), ...(criteria ? { placeQuery: serialisePlaceQuery(criteria.query), placeSort: criteria.sort, filter: { text: criteria.query.text, area: criteria.query.area, shortlist: criteria.query.shortlist, type: criteria.query.sourceType, view: 'list' as const } } : {}) }, draftId);
   }
-  protected meaningful() { return !!(this.draft.data.groups.length || this.draft.data.name || this.draft.data.filter.area || this.draft.data.filter.text); }
+  protected meaningful() { return !!(this.draft.data.placeQuery || this.draft.data.groups.length || this.draft.data.name || this.draft.data.filter.area || this.draft.data.filter.text); }
   private name(path: string) { return this.places.find(p => p.path === path)?.name ?? path.split('/').pop()!.replace(/\.md$/, ''); }
   private async stage(step: 1 | 2 | 3) { this.draft.data.step = step; this.changed(); await this.flush(); await this.render(); }
   private async redraw() { this.changed(); await this.render(); }
@@ -39,7 +40,8 @@ export class OutingPreparationModal extends PreparationModal<OutingPreparation> 
     return this.redraw();
   }
   async renderStep(): Promise<void> {
-    [this.places, this.areas] = await Promise.all([this.context.store.listPlaces(), this.context.store.listLocalities()]); if (this.closed) return;
+    [this.places, this.areas] = await Promise.all([this.context.store.listPlaces(), this.context.store.listLocalities()]);
+    this.visited = new Set((await this.context.store.visits.list()).map(v => v.sourcePath)); if (this.closed) return;
     const d = this.draft.data;
     if (d.existingPath && !d.existingRevision) {
       const existing = await this.context.store.outings.get(d.existingPath); if (this.closed) return;
@@ -55,8 +57,8 @@ export class OutingPreparationModal extends PreparationModal<OutingPreparation> 
   private choosePlaces() {
     const d = this.draft.data, el = this.contentEl, selected = new Set(stops(d.groups).map(s => s.sourcePath));
     const top = el.createDiv('charity-actions');
-    button(top, d.filter.area ? this.areas.find(a => a.path === d.filter.area)?.label ?? 'Area unavailable' : 'Choose an area', () => new PickModal(this.context, [{ path: '', label: 'All areas' }, ...this.areas], a => a.label, a => { d.filter.area = a.path; return this.redraw(); }, 'Choose an area').open());
-    const short = button(top, 'Shortlist', () => { d.filter.shortlist = !d.filter.shortlist; return this.redraw(); }); short.setAttribute('aria-pressed', String(d.filter.shortlist));
+    button(top, d.filter.area === 'unassigned' ? 'Unassigned' : d.filter.area ? this.areas.find(a => a.path === d.filter.area)?.label ?? 'Area unavailable' : 'Choose an area', () => new PickModal(this.context, [{ path: '', label: 'All areas' }, { path: 'unassigned', label: 'Unassigned' }, ...this.areas], a => a.label, a => { d.filter.area = a.path; if (d.placeQuery) d.placeQuery.area = a.path; return this.redraw(); }, 'Choose an area').open());
+    const short = button(top, 'Shortlist', () => { d.filter.shortlist = !d.filter.shortlist; if (d.placeQuery) d.placeQuery.shortlist = d.filter.shortlist; return this.redraw(); }); short.setAttribute('aria-pressed', String(d.filter.shortlist));
     button(top, d.filter.view === 'list' ? 'Show map' : 'Show list', () => { d.filter.view = d.filter.view === 'list' ? 'map' : 'list'; return this.redraw(); });
     const selectedEl = el.createDiv('charity-preparation-selected');
     selectedEl.createEl('strong', { text: selected.size ? selected.size + ' places selected' : 'Choose a few places to begin' });
@@ -64,16 +66,23 @@ export class OutingPreparationModal extends PreparationModal<OutingPreparation> 
     const search = el.createEl('input', { type: 'search', placeholder: 'Search places', attr: { 'aria-label': 'Search places to visit' } }); search.value = d.filter.text;
     const results = el.createDiv('charity-preparation-candidates');
     const draw = () => {
-      results.empty(); const area = this.areas.find(a => a.path === d.filter.area);
-      const choices = this.places.filter(p => p.kind === 'shop' && !p.properties.shop_closed && !selected.has(p.path) &&
-        (!d.filter.shortlist || p.properties.shortlist === true) && (!area || p.locality === area.path || p.path.startsWith(this.context.root + '/Places/' + area.segments.join('/') + '/')) &&
-        (!d.filter.text || [p.name, p.properties.address, p.properties.comments].join(' ').toLocaleLowerCase().includes(d.filter.text.toLocaleLowerCase())));
+      results.empty();
+      const query = normalisePlaceQuery(d.placeQuery ?? { ...defaultPlaceQuery(), text: d.filter.text, area: d.filter.area, shortlist: d.filter.shortlist, sourceType: d.filter.type });
+      query.text = d.filter.text; query.area = d.filter.area; query.shortlist = d.filter.shortlist; query.kind = 'shop';
+      const found = queryPlaces(this.places, this.areas, this.visited, query, normalisePlaceSort(d.placeSort));
+      const choices = found.places.filter(p => !selected.has(p.path) && p.properties.shop_closed !== true);
+      if (d.placeQuery) {
+        const note = results.createDiv('charity-hint');
+        if (query.status !== 'active') note.createEl('p', { text: 'Permanently closed places cannot be added to an outing.' }); note.createSpan({ text: 'Using the filters from Places. Search, area and shortlist can be adjusted here.' });
+        button(note, 'Clear carried filters', () => { delete d.placeQuery; delete d.placeSort; d.filter = { text: '', area: '', shortlist: false, type: '', view: d.filter.view }; return this.redraw(); });
+        if (found.nearbyUnavailable) note.createEl('p', { text: 'The temporary nearby reference is unavailable. Clear carried filters or choose a saved reference in the place browser.' });
+      }
       if (d.filter.view === 'map') {
         mountPlaceMap(this.owner, results, { ...this.context.mapHost, openFile: path => { const place = choices.find(p => p.path === path); return place ? this.select(place) : this.context.openFile(path); } }, { records: choices, selectionLabel: 'Add to outing' });
       } else for (const p of choices) { const row = results.createDiv('charity-source-choice'); const text = row.createDiv(); text.createEl('strong', { text: p.name }); text.createEl('p', { text: propertyText(p.properties.comments, formatRating(p.properties.rating)), cls: 'charity-hint' }); button(row, 'Add', () => this.select(p)).setAttribute('aria-label', 'Add ' + p.name); }
       if (!choices.length) results.createEl('p', { text: 'No more matching places. Change the area, shortlist or search.' });
     };
-    search.oninput = () => { d.filter.text = search.value; this.changed(); if (d.filter.view === 'list') draw(); };
+    search.oninput = () => { d.filter.text = search.value; if (d.placeQuery) d.placeQuery.text = d.filter.text; this.changed(); if (d.filter.view === 'list') draw(); };
     if (d.filter.view === 'map') search.onchange = () => this.redraw();
     draw();
     const next = button(el, 'Review journey', () => this.stage(2), true); next.disabled = !selected.size;
