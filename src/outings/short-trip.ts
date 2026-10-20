@@ -11,7 +11,48 @@ export interface ShortTripForm {
 }
 export interface ShortTripOptions {
   budgetMinutes: number; maxStops: number; areaPath: string; shortlist: boolean;
-  planning: OutingPlanningOptions; form?: ShortTripForm;
+  planning: OutingPlanningOptions; form?: ShortTripForm; rememberChoices?: boolean;
+}
+/** Only explicitly reviewed saved-place choices can become later defaults. Coordinates stay in the draft. */
+export interface ShortTripDefaults {
+  startPath?: string; budgetMinutes?: number; maxStops?: number; visitMinutes?: number; returnToStart?: boolean;
+}
+export function validateShortTripDefaults(value: unknown): ShortTripDefaults {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Short-trip defaults are invalid.');
+  const input = value as Record<string, unknown>, result: ShortTripDefaults = {};
+  if (input.startPath !== undefined) {
+    if (typeof input.startPath !== 'string' || !input.startPath || input.startPath.length > 1000) throw Error('Saved starting point is invalid.');
+    result.startPath = input.startPath;
+  }
+  if (input.budgetMinutes !== undefined) result.budgetMinutes = bounded(input.budgetMinutes, 1, 1440, 'Available minutes');
+  if (input.maxStops !== undefined) result.maxStops = bounded(input.maxStops, 1, 5, 'Maximum stops');
+  if (input.visitMinutes !== undefined) result.visitMinutes = bounded(input.visitMinutes, 1, 1440, 'Minutes per source');
+  if (input.returnToStart !== undefined) {
+    if (typeof input.returnToStart !== 'boolean') throw Error('Return choice is invalid.');
+    result.returnToStart = input.returnToStart;
+  }
+  return result;
+}
+export function readShortTripDefaults(value: unknown): ShortTripDefaults | undefined {
+  try { return validateShortTripDefaults(value); } catch { return undefined; }
+}
+/** Seed new suggestions only. Resumed drafts are loaded unchanged by PreparationModal. */
+export function seedShortTripDefaults(options: ShortTripOptions, value?: ShortTripDefaults): ShortTripOptions {
+  const result = structuredClone(options), defaults = readShortTripDefaults(value);
+  if (!defaults) return result;
+  if (defaults.startPath) result.planning.start = { kind: 'record', path: defaults.startPath };
+  if (defaults.budgetMinutes !== undefined) result.budgetMinutes = defaults.budgetMinutes;
+  if (defaults.maxStops !== undefined) result.maxStops = defaults.maxStops;
+  if (defaults.visitMinutes !== undefined) result.planning.defaultVisitMinutes = defaults.visitMinutes;
+  if (defaults.returnToStart !== undefined) result.planning.end = { kind: defaults.returnToStart ? 'return' : 'last' };
+  delete result.form;
+  return result;
+}
+export function shortTripDefaultsFromOptions(options: ShortTripOptions): ShortTripDefaults {
+  const selected = materialiseShortTripOptions(options);
+  return { ...(selected.planning.start?.kind === 'record' ? { startPath: selected.planning.start.path } : {}),
+    budgetMinutes: selected.budgetMinutes, maxStops: selected.maxStops, visitMinutes: selected.planning.defaultVisitMinutes,
+    returnToStart: selected.planning.end.kind === 'return' };
 }
 export interface ShortTripPreview {
   fingerprint: string; options: ShortTripOptions; groups: OutingGroup[]; planning: OutingPlanningOptions;
@@ -44,6 +85,10 @@ export function validateShortTripOptions(value: unknown): ShortTripOptions {
   if (!input || typeof input !== 'object' || typeof input.areaPath !== 'string' || input.areaPath.length > 1000 || typeof input.shortlist !== 'boolean') throw Error('Short-trip settings are invalid.');
   const result: ShortTripOptions = { budgetMinutes: bounded(input.budgetMinutes, 1, 1440, 'Available minutes'), maxStops: bounded(input.maxStops, 1, 5, 'Maximum stops'),
     areaPath: input.areaPath, shortlist: input.shortlist, planning: validatePlanningOptions(input.planning) };
+  if (input.rememberChoices !== undefined) {
+    if (typeof input.rememberChoices !== 'boolean') throw Error('Remember choice is invalid.');
+    result.rememberChoices = input.rememberChoices;
+  }
   if (input.form !== undefined) {
     const form = input.form;
     if (!form || typeof form !== 'object' || !['record', 'coordinates'].includes(form.startKind)) throw Error('Starting point fields are invalid.');

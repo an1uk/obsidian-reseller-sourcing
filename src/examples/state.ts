@@ -81,6 +81,7 @@ export function remapExamplesState(raw: string, fromRoot: string, toRoot: string
   settings.captureReceipts = Object.fromEntries(Object.entries(settings.captureReceipts).map(([id, path]) => [id, remap(path)]));
   settings.captureSnapshots = Object.fromEntries(Object.entries(settings.captureSnapshots).map(([path, snapshot]) => [remap(path), { ...snapshot, revision: byPath.get(path)?.afterHash ?? snapshot.revision }]));
   settings.recentLocalities = settings.recentLocalities.map(remap);
+  if (settings.shortTripDefaults?.startPath) settings.shortTripDefaults.startPath = remap(settings.shortTripDefaults.startPath);
   settings.areaHints = settings.areaHints.map(hint => ({ ...hint, townPath: remap(hint.townPath), localityPath: remap(hint.localityPath) }));
   state.files = Object.fromEntries(Object.entries(state.files).map(([path, digest]) => {
     const entry = byPath.get(path); return [remap(path), entry && digest === entry.beforeHash ? entry.afterHash : digest];

@@ -9,7 +9,8 @@ function harness(existing = false) {
  class Element {
   children: Element[] = []; parent?: Element; tag='div'; textContent=''; value=''; type=''; disabled=false; isConnected=true; hidden=false; inert=false; open=false;
   attributes: Record<string,string>={}; cls=''; style:any={}; readOnly=false; rows=0; min=''; step=''; id=''; placeholder=''; checked=false;
-  onchange?:()=>unknown; onclick?:()=>unknown;
+  onchange?:()=>unknown; onclick?:()=>unknown; focused=false;
+  focus(){this.focused=true;}
   createEl(tag:string,options:any={}) {const el=new Element();el.tag=tag;el.parent=this;el.textContent=options.text??'';el.value=options.value??'';el.type=options.type??'';el.cls=options.cls??'';el.attributes=options.attr??{};el.id=el.attributes.id??'';this.children.push(el);return el;}
   createDiv(options:any={}){return this.createEl('div',typeof options==='string'?{cls:options}:options);}
   createSpan(options:any={}){return this.createEl('span',options);}
@@ -47,7 +48,7 @@ function harness(existing = false) {
  const module={exports:{} as Record<string,any>};
  const code=transformSync(fs.readFileSync(new URL('../src/ui/visits.ts',import.meta.url),'utf8'),{loader:'ts',format:'cjs',target:'es2022'}).code;
  const sandbox:any={module,exports:module.exports,structuredClone,Number,Date,Map,Set,Error,crypto:{randomUUID:()=> 'ui-operation-'+(++timer)},window:{setTimeout:(callback:()=>void)=>{const id=++timer;timers.set(id,callback);return id;},clearTimeout:(id:number)=>timers.delete(id)},
- require(id:string){if(id==='../outings/catch-up')return{catchupVisitDate:(record:any,stop:any)=>catchupVisitDate(record,stop,new Date('2026-10-18T12:00:00Z'))};if (id.endsWith('modal-layout')) return { markInputModal() {}, modalWindow: () => sandbox.window }; if(id==='obsidian')return{Component:class{},Modal,Setting,Notice:class{constructor(message:string){notices.push(message);}}};if(id==='../storage/markdown')return{localDate:(date?:Date)=>date?date.toISOString().slice(0,10):'2026-10-18'};if(id==='../ui')return{button:(parent:Element,text:string,run:()=>unknown)=>{const button=parent.createEl('button',{text});button.onclick=run;return button;},details:(parent:Element,title:string)=>{const value=parent.createEl('details');value.createEl('summary',{text:title});return value;},propertyText: (value: unknown, fallback = '') => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : fallback, errorText:(error:any)=>error.message??String(error),renderContextBanner:()=>{}};if(id==='./visits')return module.exports;if(['../domain','../outings/domain','../map','./outing-route','./outing-planner','../workspace/outing-preparation','./outing-shortcuts','./outing-catchup'].includes(id))return{};throw Error('Unexpected import '+id);}
+ require(id:string){if(id==='../outings/catch-up')return{catchupVisitDate:(record:any,stop:any)=>catchupVisitDate(record,stop,new Date('2026-10-18T12:00:00Z'))};if (id.endsWith('modal-layout')) return { markInputModal() {}, modalWindow: () => sandbox.window }; if(id==='obsidian')return{Component:class{},Modal,Setting,Notice:class{constructor(message:string){notices.push(message);}}};if(id==='../storage/markdown')return{localDate:(date?:Date)=>date?date.toISOString().slice(0,10):'2026-10-18'};if(id==='../ui')return{button:(parent:Element,text:string,run:()=>unknown)=>{const button=parent.createEl('button',{text});button.onclick=run;return button;},details:(parent:Element,title:string)=>{const value=parent.createEl('details');value.createEl('summary',{text:title});return value;},propertyText: (value: unknown, fallback = '') => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : fallback, errorText:(error:any)=>error.message??String(error),renderContextBanner:()=>{}};if(id==='./visits')return module.exports;if(['../domain','../outings/domain','../map','./outing-route','./outing-planner','../workspace/outing-preparation','./outing-shortcuts','./outing-catchup','./outing-focus','../outings/focus'].includes(id))return{};throw Error('Unexpected import '+id);}
  };vm.runInNewContext(code,sandbox);
  const api=module.exports,modal=new api.StructuredVisitModal(context,record.sourcePath,existing?record.path:undefined);
  const outingModal=(path:string,stopId:string)=>{const out={exports:{} as Record<string,any>};vm.runInNewContext(transformSync(fs.readFileSync(new URL('../src/ui/outings.ts',import.meta.url),'utf8'),{loader:'ts',format:'cjs',target:'es2022'}).code,{...sandbox,module:out,exports:out.exports});return new out.exports.OutingVisitModal(context,path,stopId);};
@@ -293,4 +294,103 @@ test('restored drafts expose only optional groups containing saved details', asy
   const byTitle = new Map(sections.map(value => [value.children[0].textContent, value]));
   assert.equal(byTitle.get('Finds and reminders').open, true); assert.equal(byTitle.get('Haul and stock details').open, false);
   assert.equal(byTitle.get('Update source assessment').open, false); await h.modal.discard();
+});
+
+
+test('purchase chips distinguish unknown and zero, announce selection and preserve the optional haul until explicit save', () => {
+ const h=harness(),el=h.element(),input:any={...blankInput(),haulPotential:4};let changed=0;
+ const editor=h.api.renderVisitFields(el,input,()=>changed++);
+ const choice=(label:string)=>all(el).find(value=>value.attributes['aria-label']===label);
+ assert.equal(choice('Purchase count unknown').attributes['aria-pressed'],'true');
+ assert.equal(choice('Items purchased').hidden,true);
+ choice('Set purchases to 0').onclick();
+ assert.equal(input.itemsPurchased,0);assert.equal(changed,1);assert.equal(choice('Set purchases to 0').attributes['aria-pressed'],'true');
+ assert.equal(choice('Purchase count unknown').attributes['aria-pressed'],'false');
+ assert.equal(choice('Whole-haul profit potential').disabled,true);assert.equal(editor.snapshot().haulPotential,undefined);assert.equal(input.haulPotential,4);
+ choice('Purchase count unknown').onclick();assert.equal(input.itemsPurchased,undefined);assert.equal(editor.snapshot().haulPotential,4);
+ assert.equal(choice('Whole-haul profit potential').disabled,false);assert.equal(choice('Whole-haul profit potential').value,'4');
+ choice('Set purchases to 3').onclick();assert.equal(editor.snapshot().itemsPurchased,3);assert.equal(choice('Set purchases to 3').attributes['aria-pressed'],'true');
+ assert.equal(h.counts().create,0);assert.equal(h.counts().update,0);
+});
+
+test('More reveals and focuses numeric entry without creating data; undo restores the exact prior count', () => {
+ const h=harness(),el=h.element(),input:any=blankInput();let changed=0;
+ const editor=h.api.renderVisitFields(el,input,()=>changed++);
+ const more=all(el).find(value=>value.tag==='button'&&value.textContent==='More');
+ const count=all(el).find(value=>value.attributes['aria-label']==='Items purchased');
+ more.onclick();assert.equal(count.hidden,false);assert.equal(count.focused,true);assert.equal(more.attributes['aria-expanded'],'true');
+ assert.equal(input.itemsPurchased,undefined);assert.equal(changed,0);
+ field(el,'Items purchased','12');assert.equal(editor.snapshot().itemsPurchased,12);
+ all(el).find(value=>value.attributes['aria-label']==='Set purchases to 2').onclick();assert.equal(count.hidden,true);assert.equal(input.itemsPurchased,2);
+ const undo=all(el).find(value=>value.tag==='button'&&value.textContent==='Undo count');assert.equal(undo.hidden,false);undo.onclick();
+ assert.equal(input.itemsPurchased,12);assert.equal(count.value,'12');assert.equal(count.hidden,false);assert.equal(undo.hidden,true);
+ assert.equal(changed,3);editor.validate();
+});
+
+test('purchase-chip undo restores unknown or zero and does not replace subsequent typed input', () => {
+ const h=harness(),el=h.element(),input:any=blankInput(),editor=h.api.renderVisitFields(el,input,()=>{});
+ const zero=all(el).find(value=>value.attributes['aria-label']==='Set purchases to 0');
+ const unknown=all(el).find(value=>value.attributes['aria-label']==='Purchase count unknown');
+ const undo=all(el).find(value=>value.tag==='button'&&value.textContent==='Undo count');
+ zero.onclick();undo.onclick();assert.equal(input.itemsPurchased,undefined);
+ zero.onclick();unknown.onclick();undo.onclick();assert.equal(input.itemsPurchased,0);editor.validate();
+ field(el,'Items purchased','-2');assert.equal(undo.hidden,true);undo.onclick();assert.equal(input.itemsPurchased,-2);
+ assert.throws(()=>editor.validate(),/whole number/);
+ zero.onclick();undo.onclick();assert.equal(input.itemsPurchased,-2);assert.equal(all(el).find(value=>value.attributes['aria-label']==='Items purchased').value,'-2');
+ assert.throws(()=>editor.validate(),/whole number/);
+});
+
+test('restored large and invalid counts stay editable while restored chips show their exact state', () => {
+ for(const value of [0,1,2,3,7,-1,1.5]) {
+  const h=harness(),el=h.element(),input:any={...blankInput(),itemsPurchased:value},editor=h.api.renderVisitFields(el,input,()=>{});
+  const count=all(el).find(item=>item.attributes['aria-label']==='Items purchased');assert.equal(count.value,String(value));assert.equal(count.hidden,value>=0&&value<=3&&Number.isInteger(value));
+  const selected=all(el).filter(item=>item.tag==='button'&&item.attributes['aria-pressed']==='true');
+  assert.deepEqual(selected.map(item=>item.textContent),value>=0&&value<=3&&Number.isInteger(value)?[String(value)]:[]);
+  assert.equal(editor.snapshot().itemsPurchased,value);
+ }
+});
+
+test('recent stock-colour chips preserve recency, cap their number and never assign a confidence', () => {
+ const h=harness(),el=h.element(),input:any={...blankInput(),stockColour:'My custom Shade'};let changed=0;
+ const editor=h.api.renderVisitFields(el,input,()=>changed++,{colourSuggestions:['Orange','Blue','Orange','Lilac','Green','Yellow','White','Pink']});
+ const colours=all(el).filter(value=>value.tag==='button'&&value.attributes['aria-label']?.startsWith('Use stock colour '));
+ assert.deepEqual(colours.map(value=>value.textContent),['Orange','Blue','Lilac','Green','Yellow','White']);
+ assert.equal(all(el).find(value=>value.attributes['aria-label']==='Stock colour').value,'My custom Shade');
+ colours[1].onclick();assert.equal(input.stockColour,'Blue');assert.equal(input.colourEvidence,undefined);assert.equal(editor.snapshot().colourEvidence,'unknown');
+ assert.equal(colours[1].attributes['aria-pressed'],'true');assert.equal(changed,1);
+ field(el,'Stock colour','  My custom Shade  ');assert.equal(input.stockColour,'  My custom Shade  ');assert.equal(editor.snapshot().stockColour,'My custom Shade');
+ assert.equal(colours.every(value=>value.attributes['aria-pressed']==='false'),true);
+});
+
+test('stock-colour shortcuts preserve explicit unknown, suspected and confirmed evidence without inference', () => {
+ for(const evidence of ['unknown','suspected','confirmed']) {
+  const h=harness(),el=h.element(),input:any={...blankInput(),stockColour:'blue',colourEvidence:evidence};
+  const editor=h.api.renderVisitFields(el,input,()=>{},{colourSuggestions:['Blue','blue']});
+  const choices=all(el).filter(value=>value.tag==='button'&&value.attributes['aria-label']?.startsWith('Use stock colour '));
+  assert.equal(choices[0].attributes['aria-pressed'],'false');assert.equal(choices[1].attributes['aria-pressed'],'true');
+  choices[0].onclick();assert.equal(input.stockColour,'Blue');assert.equal(editor.snapshot().colourEvidence,evidence);
+ }
+});
+
+test('disabled visit controls block quick-count, more, undo and colour actions and restore valid control states', () => {
+ const h=harness(),el=h.element(),input:any={...blankInput(),haulPotential:3};let changed=0;
+ const editor=h.api.renderVisitFields(el,input,()=>changed++,{colourSuggestions:['Blue']});
+ const zero=all(el).find(value=>value.attributes['aria-label']==='Set purchases to 0');zero.onclick();assert.equal(changed,1);
+ editor.setDisabled(true);assert.equal(all(el).filter(value=>value.tag==='button').every(value=>value.disabled),true);
+ for(const label of ['Set purchases to 1','Purchase count unknown','Use stock colour Blue']) all(el).find(value=>value.attributes['aria-label']===label).onclick();
+ for(const label of ['More','Undo count']) all(el).find(value=>value.tag==='button'&&value.textContent===label).onclick();
+ assert.equal(input.itemsPurchased,0);assert.equal(input.stockColour,undefined);assert.equal(changed,1);
+ editor.setDisabled(false);assert.equal(zero.disabled,false);assert.equal(all(el).find(value=>value.attributes['aria-label']==='Whole-haul profit potential').disabled,true);
+ all(el).find(value=>value.tag==='button'&&value.textContent==='Undo count').onclick();assert.equal(input.itemsPurchased,undefined);
+ assert.equal(all(el).find(value=>value.attributes['aria-label']==='Whole-haul profit potential').disabled,false);
+});
+
+test('purchase-chip edits persist in the existing draft without recording a visit implicitly', async () => {
+ const h=harness();await open(h);
+ all(h.modal.contentEl).find(value=>value.attributes['aria-label']==='Set purchases to 1').onclick();await h.modal.flush();
+ assert.equal(h.getDraft().itemsPurchased,1);assert.equal(h.counts().create,0);
+ all(h.modal.contentEl).find(value=>value.attributes['aria-label']==='Purchase count unknown').onclick();await h.modal.flush();
+ assert.equal(h.getDraft().itemsPurchased,undefined);assert.equal(h.counts().create,0);
+ field(h.modal.contentEl,'Visit quick note','Still a draft, despite the excellent cardigan.');await h.modal.save();
+ assert.equal(h.counts().create,1);assert.equal(h.saves[0].input.itemsPurchased,undefined);
 });

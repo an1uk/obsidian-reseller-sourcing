@@ -82,6 +82,13 @@ export class SourcingSettings extends PluginSettingTab {
           };
         });
       } },
+      { name: 'Short-trip defaults', desc: 'Remember reviewed choices in short-trip planning. They apply only to new preparations.', aliases: ['starting point', 'travel'], render: setting => {
+        setting.addButton(control => control.setButtonText('Clear remembered choices').setDisabled(!plugin.settings.shortTripDefaults).onClick(() => {
+          const finish = plugin.beginEditing(); if (!finish) return;
+          void plugin.store.rememberShortTripDefaults().then(() => { this.update(); new Notice('Short-trip defaults cleared'); })
+            .catch(error => new Notice('Setting was not saved: ' + errorText(error))).finally(finish);
+        }));
+      } },
       { name: 'Remembered address rules', desc: 'Review phrases and towns used to suggest localities. Edit, disable or remove any rule.', aliases: ['hints', 'town', 'locality'], render: setting => {
         setting.addButton(control => control.setButtonText('Manage address rules').onClick(() => new AreaHintsModal(plugin).open()));
       } },

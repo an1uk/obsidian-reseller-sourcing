@@ -1,4 +1,6 @@
 import { propertyText } from '../domain/guards';
+import { isOutingFocus, outingFocusFingerprint, outingFocusView } from './focus';
+import { validateCoordinates } from '../domain/coordinates';
 import { validateVisitInput, visitInputShape } from '../visits/store';
 import { visitRefersToOutingStop } from './catch-up';
 import type { VisitStore } from '../visits/store';
@@ -7,7 +9,7 @@ import type { PlaceRecord } from '../types';
 import { safeFileName } from '../domain';
 import { NotebookPaths } from '../storage/paths';
 import { appendVisit, hashText, linkPath, readNote, updateNoteProperty, wiki, writeNote } from '../storage/markdown';
-import type { OutingGroup, OutingPlanInput, OutingRecord, OutingStop, OutingStopStatus, OutingVisitInput, OutingVisitOptions, OutingPlanningOptions, OutingOptimisationPreview, PlanningHours } from './types';
+import type { OutingGroup, OutingPlanInput, OutingRecord, OutingStop, OutingStopStatus, OutingVisitInput, OutingVisitOptions, OutingPlanningOptions, OutingOptimisationPreview, PlanningHours, OutingFocusState } from './types';
 
 import { buildOutingOptimisationPreview, resolvePlanningAnchor, validatePlanningOptions } from './planning';
 import { extractSourceContext } from './domain';
@@ -42,6 +44,7 @@ function outingShape(value: unknown): value is Omit<OutingRecord, 'path' | 'revi
     const op = value.operation;
     if (!object(op) || !visitInputShape(op.input) || !['id', 'stopId', 'sourcePath', 'recordedAt', 'sourceBeforeHash', 'sourceIdentity'].every(key => typeof op[key] === 'string') || !['visitPath', 'visitId', 'visitRevision'].every(key => op[key] === undefined || typeof op[key] === 'string') || op.kind !== undefined && op.kind !== 'linked-visit' || op.confirmedSkipped !== undefined && typeof op.confirmedSkipped !== 'boolean') return false;
   }
+  if (value.focus !== undefined && !isOutingFocus(value.focus)) return false;
   return ['preparationId', 'startedAt', 'finishedAt'].every(key => value[key] === undefined || typeof value[key] === 'string') && (value.exampleBackground === undefined || typeof value.exampleBackground === 'boolean');
 }
 
@@ -84,6 +87,7 @@ export class OutingStore {
       if (operation.visitPath) operation.visitPath = linkPath(operation.visitPath);
     }
     if (record.planning) record.planning = this.normalisePlanning(record.planning);
+    if (record.focus?.parkedParkingPath) record.focus.parkedParkingPath = linkPath(record.focus.parkedParkingPath);
     return { record, raw };
   }
   async get(path: string): Promise<OutingRecord> { return (await this.load(path)).record; }
@@ -106,6 +110,7 @@ export class OutingStore {
       if (data.planning.start?.kind === 'record') data.planning.start.path = wiki(data.planning.start.path);
       if (data.planning.end.kind === 'record') data.planning.end.path = wiki(data.planning.end.path);
     }
+    if (data.focus?.parkedParkingPath) data.focus.parkedParkingPath = wiki(data.focus.parkedParkingPath);
     return { ...data, schema: 1 };
   }
   private async persist(record: OutingRecord, raw: string): Promise<OutingRecord> {
@@ -278,6 +283,37 @@ export class OutingStore {
       };
       record.groups = ordered(record.groups, groupIds);
       for (const group of record.groups) if (stopIdsByGroup[group.id]) group.stops = ordered(group.stops, stopIdsByGroup[group.id]);
+      return this.persist(record, raw);
+    });
+  }
+  /** View choices share the same revision checks and serial operation as progress changes. */
+  async setFocus(path: string, focus: OutingFocusState, revision: string, expectedFingerprint: string): Promise<OutingRecord> {
+    return this.host.exclusive(async () => {
+      const { record, raw } = await this.load(path);
+      if (!isOutingFocus(focus) || !revision) throw Error('This focus stage needs review.');
+      const candidate = structuredClone(focus), places = await this.host.listPlaces();
+      const view = outingFocusView(record, places), previous = record.focus ?? view.state;
+      const displayOnly = candidate.phase === previous.phase && candidate.stopId === previous.stopId &&
+        candidate.parkedGroupId === previous.parkedGroupId && candidate.parkedParkingPath === previous.parkedParkingPath &&
+        JSON.stringify(candidate.parkedCoordinates) === JSON.stringify(previous.parkedCoordinates);
+      this.check(record, revision, displayOnly);
+      if (record.draft && !displayOnly) throw Error('Resume or discard the saved visit draft before changing the focus stage.');
+      if (candidate.enabled && record.status !== 'active') throw Error('Start or resume the outing before using Out and about.');
+      if (!expectedFingerprint || expectedFingerprint !== outingFocusFingerprint(record, places)) throw Error('A source, parking location or outing changed. Reopen the outing before changing stage.');
+      if (!displayOnly) {
+        if (candidate.stopId !== (view.stop?.id ?? '')) throw Error('The current source changed. Reopen the outing before changing stage.');
+        if (candidate.parkedGroupId) {
+          const group = record.groups.find(value => value.id === candidate.parkedGroupId && value.parkingPath === candidate.parkedParkingPath);
+          const parking = places.find(place => place.path === candidate.parkedParkingPath && place.kind === 'parking');
+          const pin = validateCoordinates(parking?.coordinates), confirmed = validateCoordinates(candidate.parkedCoordinates);
+          if (!group || !parking || !pin || !confirmed || pin[0] !== confirmed[0] || pin[1] !== confirmed[1]) throw Error('The saved parking location is unavailable or its pin changed. Review the full outing.');
+          if (candidate.parkedGroupId !== view.state.parkedGroupId && (candidate.parkedGroupId !== view.group?.id || candidate.phase !== 'walk')) throw Error('Confirm the selected parking before using it as your parked location.');
+        }
+        if (candidate.phase === 'return' && !candidate.parkedGroupId) throw Error('Confirm where you parked before returning to the car.');
+        if (candidate.phase === 'drive' && (!view.parking || !validateCoordinates(view.parking.coordinates))) throw Error('The selected parking needs a valid pin before driving directions are available.');
+        if (!view.stop && (candidate.phase !== 'return' && (candidate.phase !== 'visit' || candidate.parkedGroupId))) throw Error('No remaining source needs this stage.');
+      }
+      record.focus = candidate;
       return this.persist(record, raw);
     });
   }

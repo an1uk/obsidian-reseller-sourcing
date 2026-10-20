@@ -93,6 +93,7 @@ export function renderVisitFields(parent: HTMLElement, input: VisitInput, change
     control.inputEl.type = 'date'; control.inputEl.setAttribute('aria-label', 'Visit date');
     control.setValue(input.visitDate).onChange(value => { input.visitDate = value; changed(); });
   });
+  let disabled = false;
   let scoreControl!: HTMLSelectElement;
   const noHaul = parent.createEl('p', { cls: 'charity-hint charity-visit-no-haul', attr: { role: 'status' } });
   const updateScoreState = () => {
@@ -101,12 +102,49 @@ export function renderVisitFields(parent: HTMLElement, input: VisitInput, change
     noHaul.setText(input.itemsPurchased === 0 ? 'No purchases: haul score is not applicable. Saving clears any saved haul score.' : '');
     noHaul.toggle(input.itemsPurchased === 0);
   };
-  new Setting(parent).setName('Items purchased').setDesc('Leave blank if unknown. Enter 0 when you bought nothing.').addText(control => {
-    control.inputEl.type = 'number'; control.inputEl.min = '0'; control.inputEl.step = '1'; control.inputEl.setAttribute('aria-label', 'Items purchased');
+  let purchaseInput!: HTMLInputElement;
+  let numberEntry = input.itemsPurchased !== undefined && (!Number.isInteger(input.itemsPurchased) || input.itemsPurchased < 0 || input.itemsPurchased > 3);
+  let previousCount: { value: number | undefined; raw: string; expanded: boolean } | undefined;
+  const purchaseButtons: { value: number | undefined; button: HTMLButtonElement }[] = [];
+  const purchaseSetting = new Setting(parent).setName('Items purchased').setDesc('Unknown is different from 0. Enter another count if needed.').addText(control => {
+    purchaseInput = control.inputEl;
+    purchaseInput.id = 'visit-purchase-count-' + crypto.randomUUID();
+    purchaseInput.type = 'number'; purchaseInput.inputMode = 'numeric'; purchaseInput.min = '0'; purchaseInput.step = '1'; purchaseInput.setAttribute('aria-label', 'Items purchased');
     control.setValue(input.itemsPurchased === undefined ? '' : String(input.itemsPurchased)).onChange(value => {
-      input.itemsPurchased = value.trim() ? Number(value) : undefined; updateScoreState(); changed();
+      if (disabled) return;
+      input.itemsPurchased = value.trim() ? Number(value) : undefined; previousCount = undefined;
+      updateScoreState(); updatePurchaseState(); changed();
     });
   });
+  purchaseSetting.settingEl.addClass('charity-visit-purchase-setting');
+  const purchaseChoices = purchaseSetting.settingEl.createDiv({ cls: 'charity-visit-quick-choices', attr: { role: 'group', 'aria-label': 'Quick purchase count' } });
+  const setPurchaseCount = (value: number | undefined) => {
+    if (disabled) return;
+    if (!Object.is(input.itemsPurchased, value)) previousCount = { value: input.itemsPurchased, raw: purchaseInput.value, expanded: numberEntry };
+    input.itemsPurchased = value; purchaseInput.value = value === undefined ? '' : String(value); numberEntry = false;
+    updateScoreState(); updatePurchaseState(); changed();
+  };
+  for (const value of [undefined, 0, 1, 2, 3]) {
+    const choice = purchaseChoices.createEl('button', { text: value === undefined ? 'Unknown' : String(value), attr: { type: 'button', 'aria-label': value === undefined ? 'Purchase count unknown' : 'Set purchases to ' + value } });
+    choice.onclick = () => setPurchaseCount(value);
+    purchaseButtons.push({ value, button: choice });
+  }
+  const moreCount = purchaseChoices.createEl('button', { text: 'More', attr: { type: 'button', 'aria-controls': purchaseInput.id } });
+  moreCount.onclick = () => { if (disabled) return; numberEntry = true; updatePurchaseState(); purchaseInput.focus(); };
+  const undoCount = purchaseSetting.settingEl.createEl('button', { text: 'Undo count', cls: 'charity-visit-undo-count', attr: { type: 'button' } });
+  undoCount.onclick = () => {
+    if (disabled || !previousCount) return;
+    input.itemsPurchased = previousCount.value; purchaseInput.value = previousCount.raw; numberEntry = previousCount.expanded; previousCount = undefined;
+    updateScoreState(); updatePurchaseState(); changed();
+    (numberEntry ? purchaseInput : purchaseButtons.find(choice => Object.is(input.itemsPurchased, choice.value))?.button ?? moreCount).focus();
+  };
+  function updatePurchaseState(): void {
+    for (const choice of purchaseButtons) choice.button.setAttribute('aria-pressed', String(Object.is(input.itemsPurchased, choice.value)));
+    purchaseInput.hidden = !numberEntry;
+    moreCount.setAttribute('aria-expanded', String(numberEntry));
+    undoCount.hidden = !previousCount; undoCount.disabled = disabled || !previousCount;
+  }
+  updatePurchaseState();
   new Setting(parent).setName('Quick note').addTextArea(control => {
     control.inputEl.rows = 4; control.inputEl.placeholder = 'What is worth remembering?'; control.inputEl.setAttribute('aria-label', options.quickNoteLabel ?? 'Visit quick note');
     control.setValue(input.observations).onChange(value => { input.observations = value; changed(); });
@@ -120,12 +158,28 @@ export function renderVisitFields(parent: HTMLElement, input: VisitInput, change
     control.setValue(input.haulPotential === undefined ? '' : String(input.haulPotential)).onChange(value => { input.haulPotential = value ? Number(value) : undefined; changed(); });
   });
   haul.appendChild(noHaul); updateScoreState();
+  const colourSuggestions = [...new Set((options.colourSuggestions ?? []).filter(value => typeof value === 'string' && value.trim()).map(value => value.trim()))];
   const colours = haul.createEl('datalist', { attr: { id: 'visit-stock-colours-' + crypto.randomUUID() } });
-  for (const value of [...new Set(options.colourSuggestions ?? [])].filter(Boolean).sort()) colours.createEl('option', { value });
+  for (const value of colourSuggestions) colours.createEl('option', { value });
+  let colourInput!: HTMLInputElement;
+  const colourButtons: { value: string; button: HTMLButtonElement }[] = [];
+  const updateColourState = () => { for (const choice of colourButtons) choice.button.setAttribute('aria-pressed', String(input.stockColour?.trim() === choice.value)); };
   new Setting(haul).setName('Stock colour').setDesc('One observed label or colour for this branch. Its meaning may be unknown.').addText(control => {
+    colourInput = control.inputEl;
     control.inputEl.setAttribute('aria-label', 'Stock colour'); control.inputEl.setAttribute('list', colours.id);
-    control.setValue(input.stockColour ?? '').onChange(value => { input.stockColour = value; changed(); });
+    control.setValue(input.stockColour ?? '').onChange(value => { if (disabled) return; input.stockColour = value; updateColourState(); changed(); });
   });
+  if (colourSuggestions.length) {
+    const recent = haul.createDiv({ cls: 'charity-visit-recent-colours' });
+    recent.createEl('p', { text: 'Recently recorded for this branch', cls: 'charity-hint' });
+    const choices = recent.createDiv({ cls: 'charity-visit-quick-choices', attr: { role: 'group', 'aria-label': 'Recent stock colours for this branch' } });
+    for (const value of colourSuggestions.slice(0, 6)) {
+      const choice = choices.createEl('button', { text: value, attr: { type: 'button', 'aria-label': 'Use stock colour ' + value } });
+      choice.onclick = () => { if (disabled) return; input.stockColour = value; colourInput.value = value; updateColourState(); changed(); };
+      colourButtons.push({ value, button: choice });
+    }
+    updateColourState();
+  }
   new Setting(haul).setName('Colour meaning').setDesc('Confirmed means staff, signage or direct observation established its meaning.').addDropdown(control => {
     control.selectEl.setAttribute('aria-label', 'Colour meaning');
     control.addOption('unknown', 'Meaning unknown').addOption('suspected', 'Suspected meaning').addOption('confirmed', 'Confirmed by staff, signage or observation');
@@ -172,8 +226,9 @@ export function renderVisitFields(parent: HTMLElement, input: VisitInput, change
       if (!value.observations.trim() && !value.finds.trim() && !value.nextTime.trim() && value.itemsPurchased === undefined && value.haulPotential === undefined && !value.stockColour && value.rating === undefined && !value.comments?.trim()) throw Error('Add a purchase count, haul score, stock colour or a few visit details.');
     },
     setDisabled(value) {
-      parent.inert = value;
-      parent.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input,textarea,select').forEach(control => control.disabled = value);
+      disabled = value; parent.inert = value;
+      parent.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement>('input,textarea,select,button').forEach(control => control.disabled = value);
+      updatePurchaseState();
       if (!value) updateScoreState();
     },
   };

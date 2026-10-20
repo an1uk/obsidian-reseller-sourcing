@@ -198,7 +198,12 @@ export class SourcingWorkspace extends ItemView {
       else if (route.screen === 'history') { el.createEl('h1', { text: 'History' }); const content = el.createDiv(); await renderVisitsHub(c, this.owner, content, this.state.history ??= {}, active); }
       else if (route.screen === 'more') await this.renderMore(el);
       else if (route.screen === 'place') await this.renderPlace(el, route.path, route.section ?? 'overview');
-      else if (route.screen === 'outing') { const record = await c.store.outings.get(route.path); el.createEl('h1', { text: record.name }); await renderOuting(c, this.owner, el, route.path, active, () => this.navigate({ screen: 'outing-catchup', path: route.path })); }
+      else if (route.screen === 'outing') {
+        const record = await c.store.outings.get(route.path); el.createEl('h1', { text: record.name });
+        const navigationRevision = this.navigationRevision, outingPath = route.path;
+        const actionCurrent = () => !this.closed && navigationRevision === this.navigationRevision && this.root === c.root && this.state.route.screen === 'outing' && this.state.route.path === outingPath;
+        await renderOuting(c, this.owner, el, outingPath, active, () => this.navigate({ screen: 'outing-catchup', path: outingPath }), actionCurrent);
+      }
       else if (route.screen === 'outing-catchup') {
         el.createEl('h1', { text: 'Catch up on visits' });
         button(el.createDiv('charity-actions'), 'Back to outing', () => this.navigate({ screen: 'outing', path: route.path }));

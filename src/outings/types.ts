@@ -20,9 +20,14 @@ export interface OutingVisitOperation {
   sourceBeforeHash: string; sourceIdentity: string;
   kind?: 'linked-visit'; visitPath?: string; visitId?: string; visitRevision?: string; confirmedSkipped?: boolean;
 }
+export type OutingFocusPhase = 'drive' | 'walk' | 'visit' | 'return';
+export interface OutingFocusState {
+  enabled: boolean; phase: OutingFocusPhase; stopId: string;
+  parkedGroupId?: string; parkedParkingPath?: string; parkedCoordinates?: Coordinates;
+}
 export interface OutingRecord {
   preparationId?: string; exampleBackground?: boolean;
-  id: string; path: string; name: string; status: OutingStatus; groups: OutingGroup[];
+  id: string; path: string; name: string; status: OutingStatus; groups: OutingGroup[]; focus?: OutingFocusState;
   createdAt: string; startedAt?: string; finishedAt?: string;
   draft?: OutingVisitDraft; operation?: OutingVisitOperation; revision: string; planning?: OutingPlanningOptions;
 }

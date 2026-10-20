@@ -1,6 +1,6 @@
 {
   "name": "charity-sourcing",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "description": "Local reseller sourcing notebook for Obsidian",
   "license": "MIT",
@@ -23,7 +23,7 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "package": "npm run build && node scripts/package.mjs",
     "lint:source": "eslint src package.json manifest.json --max-warnings 0",
-    "lint:css": "stylelint map.css ui.css visit-insights.css --max-warnings 0",
+    "lint:css": "stylelint map.css ui.css visit-insights.css visit-shortcuts.css short-trip.css outing-focus.css --max-warnings 0",
     "lint": "npm run lint:source && npm run lint:css"
   },
   "dependencies": {

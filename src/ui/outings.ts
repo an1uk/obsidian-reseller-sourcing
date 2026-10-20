@@ -16,6 +16,8 @@ export { OutingPreparationModal as NewOutingModal } from '../workspace/outing-pr
 import { OutingPreparationModal as NewOutingModal } from '../workspace/outing-preparation';
 import { openShortTripPreparation, repeatOuting } from './outing-shortcuts';
 import { renderOutingCatchup } from './outing-catchup';
+import { renderOutingFocus } from './outing-focus';
+import { outingFocusFingerprint, outingFocusView } from '../outings/focus';
 
 const clone = <T>(value: T): T => structuredClone(value);
 const stopsOf = (record: { groups: OutingGroup[] }): OutingStop[] => record.groups.flatMap(group => group.stops);
@@ -95,14 +97,27 @@ async function sourceContext(plugin: NotebookContext, el: HTMLElement, place: Pl
     hours.createEl('p', { text: 'A saved snapshot. Check the listing if timing matters.', cls: 'charity-hint' });
   }
 }
-export async function renderOuting(plugin: NotebookContext, owner: Component, el: HTMLElement, path: string, isCurrent: () => boolean = () => true, openCatchup?: () => void | Promise<void>): Promise<void> {
+export async function renderOuting(plugin: NotebookContext, owner: Component, el: HTMLElement, path: string, isCurrent: () => boolean = () => true, openCatchup?: () => void | Promise<void>, isActionCurrent: () => boolean = isCurrent): Promise<void> {
   const [record, places, visits] = await Promise.all([plugin.store.outings.get(path), plugin.store.listPlaces(), plugin.store.visits.list()]); if (!isCurrent()) return;
   const visitRecords = new Map(visits.map(visit => [visit.path, visit]));
+  const catchup = openCatchup ?? (() => { new OutingCatchupModal(plugin, path).open(); });
+  if (record.status === 'active' && record.focus?.enabled) {
+    await renderOutingFocus(plugin, el, record, places, {
+      openVisit: stopId => new OutingVisitModal(plugin, path, stopId).open(),
+      finish: () => new FinishOutingModal(plugin, record).open(),
+      skip: () => { const current = outingFocusView(record, places).stop; if (current) new SkipStopModal(plugin, record, current).open(); },
+      discardDraft: () => new DiscardDraftModal(plugin, record).open(), catchup,
+    }, isCurrent, isActionCurrent);
+    return;
+  }
   el.addClass('charity-outing'); el.createEl('p', { text: record.status + ' · ' + progress(record), cls: 'charity-outing-summary' });
   const act = (run: () => Promise<unknown>) => editing(plugin, run);
   const primary = el.createDiv('charity-actions charity-outing-primary');
+  if (record.status === 'active' && !record.operation) {
+    const state = outingFocusView(record, places).state;
+    button(primary, 'Out and about', () => act(() => plugin.store.outings.setFocus(path, { ...(record.focus ?? state), enabled: true }, record.revision, outingFocusFingerprint(record, places))), true);
+  }
   if (record.exampleBackground) button(primary, 'Resume outing', () => act(() => plugin.store.outings.start(path, record.revision)), true);
-  const catchup = openCatchup ?? (() => { new OutingCatchupModal(plugin, path).open(); });
   if (record.status === 'finished') {
     button(primary, 'Catch up on visits', catchup, true);
     button(primary, 'Repeat outing', () => repeatOuting(plugin, path, isCurrent));

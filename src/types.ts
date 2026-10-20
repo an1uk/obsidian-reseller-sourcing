@@ -1,3 +1,4 @@
+import type { ShortTripDefaults } from './outings/short-trip';
 import type { DistanceUnit } from './units';
 export type Coordinates = [number, number];
 export type PlaceKind = 'shop' | 'parking';
@@ -44,7 +45,7 @@ export interface MoveReport { moved: string[]; updated: string[]; backupRoot: st
 export interface MoveSettingsSnapshot {
   root: string; assets: Settings['assets']; captureReceipts: Record<string, string>;
   captureSnapshots: Record<string, CaptureSnapshot>; previousRoots: string[]; recentLocalities: string[];
-  areaHints?: AreaHint[];
+  areaHints?: AreaHint[]; shortTripDefaults?: ShortTripDefaults;
 }
 export interface MoveJournal {
   id: string; kind: MovePreview['kind']; status: 'preparing' | 'moving' | 'failed';
@@ -56,7 +57,7 @@ export interface Settings {
   assets: Record<string, { hash: string; version: number }>;
   captureReceipts: Record<string, string>; captureSnapshots: Record<string, CaptureSnapshot>;
   previousRoots: string[]; sourceTypes: string[]; recentLocalities: string[];
-  defaultSourceType: string; areaHints: AreaHint[];
+  defaultSourceType: string; areaHints: AreaHint[]; shortTripDefaults?: ShortTripDefaults;
   clipperImports?: Partial<Record<PlaceKind, { fingerprint: string; release: string; confirmedAt: string }>>;
   clipperNoticeFingerprint?: string;
   migration?: MoveJournal;

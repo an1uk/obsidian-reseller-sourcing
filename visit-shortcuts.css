@@ -1,0 +1,49 @@
+/* Quick visit choices use the existing Obsidian theme. */
+.charity-structured-visit-fields .charity-visit-purchase-setting {
+  display: block;
+}
+
+.charity-visit-purchase-setting .setting-item-control {
+  justify-content: flex-start;
+  margin-block: var(--size-4-2);
+}
+
+.charity-structured-visit-fields .charity-visit-quick-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  margin-block: var(--size-4-2);
+}
+
+.charity-structured-visit-fields .charity-visit-quick-choices button {
+  min-inline-size: var(--charity-touch-target, 44px);
+  min-block-size: var(--charity-touch-target, 44px);
+  block-size: auto;
+  max-inline-size: 100%;
+  padding: var(--size-4-2) var(--size-4-3);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.charity-structured-visit-fields .charity-visit-quick-choices button[aria-pressed="true"] {
+  background: var(--background-secondary-alt);
+  color: var(--text-normal);
+  box-shadow: inset 0 0 0 1px var(--interactive-accent);
+  font-weight: var(--font-semibold);
+}
+
+.charity-structured-visit-fields .charity-visit-undo-count {
+  min-block-size: var(--charity-touch-target, 44px);
+  margin-block-start: var(--size-4-1);
+}
+
+.charity-structured-visit-fields .charity-visit-quick-choices button:focus-visible,
+.charity-structured-visit-fields .charity-visit-undo-count:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+
+.charity-visit-recent-colours > p {
+  margin-block-end: var(--size-4-1);
+}

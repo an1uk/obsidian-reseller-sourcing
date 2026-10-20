@@ -1,6 +1,18 @@
-# Validation: Reseller sourcing 0.13.0
+# Validation: Reseller sourcing 0.14.0
 
 One shared desktop/Android plugin, ID **charity-sourcing**, requiring Obsidian **1.14.4** or newer. Clipper templates remain **v0.4.2**. This document distinguishes repeatable public-tree checks from historical native and physical acceptance. Private captures, screenshots, device details, vault paths and test harnesses are not included in the repository.
+
+## 0.14.0 verification
+
+On 21 October 2026, source/CSS lint, type checking, the production build, packaging and licence checks passed. The portable suite completed 682 tests: **679 passed, zero failed and three optional integration checks skipped**, as described below. Frozen historical example outputs remained unchanged. No runtime dependency or browser-template change was needed.
+
+**13 isolated native Obsidian scenarios passed**, including three full process restarts for raw short-trip input, unfinished visit details and the parked-car anchor. They covered optional focus stages, explicit parking/arrival choices, shared-parking walking, final return, reviewed journey handoff, practice-only remembered defaults, unknown versus zero purchases, count undo and recent branch-colour shortcuts. Thirty-six narrow light/dark layouts included simulated keyboard heights. A final stylesheet repeat verified all three journey footer labels and reachable actions across 12 width/theme/keyboard configurations after correcting narrow text wrapping. The unrelated vault/configuration guards remained unchanged. These are scoped functional and layout checks, not an accessibility certification.
+
+**Twelve physical Android workflow scenarios completed** in a separate test vault over Wi-Fi debugging. Nine passed in the initial run; after correcting a test-only wait for asynchronously loaded form fields, the final three continued from the verified existing draft without replaying earlier saves. Checks covered the two-choice short-trip form, invalid input across cold reopening, explicitly selected parking, reviewed handoff, practice-only defaults, optional focus/manual stages, fictional direction previews, purchase shortcuts and Undo, native numeric/text entry, branch colours without inferred confidence, keyboard-open actions in light/dark themes, restored visits saved once, shared-parking walking, zero-purchase visits, final car return, explicit finishing and completed results after cold reopening. All 198 pre-existing notebook files and personal preferences were preserved; new test records remained inside Examples.
+
+The three installed phone assets were pulled back and matched the packaged hashes. Desktop installation used a verified outside-vault backup and compared 4,703 vault files: all 145 notebook files and personal plugin preferences were unchanged. Only plugin package files changed. Source/diff and unpacked-asset privacy checks found no private identifiers in the new public changes. Release assets are produced by the tag-only verification and attestation workflow.
+
+Interactive Chrome capture, real notebook sync, live Google routing capacity and location-permission checks remain outstanding. These checks do not establish every Android device or external handler. Results below the 0.13.0 heading describe the earlier published release.
 
 ## 0.13.0 verification
 

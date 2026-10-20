@@ -1,0 +1,65 @@
+.charity-outing-focus {
+  display: grid;
+  gap: var(--size-4-3);
+}
+
+.charity-outing-focus .charity-focus-label {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.charity-focus-card {
+  padding: var(--size-4-4);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.charity-focus-card h3 {
+  margin: var(--size-4-2) 0;
+}
+
+.charity-focus-card .charity-focus-stage {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.charity-focus-destination {
+  margin-block: var(--size-4-2);
+}
+
+.charity-focus-reminder {
+  margin-block: var(--size-4-3);
+  padding: var(--size-4-3);
+  background: var(--background-primary);
+  border-radius: var(--radius-s);
+}
+
+.charity-focus-reminder p {
+  margin: var(--size-4-1) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.charity-focus-actions {
+  display: grid;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-3);
+}
+
+.charity-focus-actions button {
+  min-height: 44px;
+  white-space: normal;
+  height: auto;
+  padding: var(--size-4-2) var(--size-4-3);
+}
+
+.charity-focus-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.charity-outing-focus .charity-actions button {
+  min-height: 44px;
+}

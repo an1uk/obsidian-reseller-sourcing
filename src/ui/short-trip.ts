@@ -1,10 +1,10 @@
-import { Setting } from 'obsidian';
+import { Notice, Setting } from 'obsidian';
 import type { NotebookContext } from '../notebook-context';
 import type { LocalityRecord, PlaceRecord } from '../types';
 import type { PlanningHours } from '../outings/types';
 import type { OutingPreparation } from '../workspace/types';
 import { PreparationModal } from '../workspace/preparation-modal';
-import { buildShortTripPreview, defaultShortTripOptions, shortTripForm, shortTripHoursSources, type ShortTripForm, type ShortTripOptions, type ShortTripPreview } from '../outings/short-trip';
+import { buildShortTripPreview, defaultShortTripOptions, seedShortTripDefaults, shortTripDefaultsFromOptions, shortTripForm, shortTripHoursSources, type ShortTripDefaults, type ShortTripForm, type ShortTripOptions, type ShortTripPreview } from '../outings/short-trip';
 import { formatPlanningTime } from '../outings/planning';
 import { validateCoordinates } from '../domain/coordinates';
 import { formatDistance, normaliseDistanceUnit } from '../units';
@@ -19,17 +19,25 @@ export class ShortTripModal extends PreparationModal<OutingPreparation> {
   private suggestButton?: HTMLButtonElement;
   private comparison?: ShortTripPreview;
   private generation = 0;
-  constructor(context: NotebookContext, private onUse: (draftId: string) => Promise<void> | void, draftId?: string, criteria?: { areaPath?: string; shortlist?: boolean }) {
-    const shortTrip = defaultShortTripOptions();
+  private summaryEl?: HTMLElement;
+  private adjustEl?: HTMLDetailsElement;
+  private adjustExpanded?: boolean;
+  private initialForm: ShortTripForm;
+  private budgetButtons = new Map<number, HTMLButtonElement>();
+  constructor(context: NotebookContext, private onUse: (draftId: string) => Promise<void> | void, draftId?: string, criteria?: { areaPath?: string; shortlist?: boolean }, private preferences: { defaults?: ShortTripDefaults; remember?: (defaults: ShortTripDefaults) => Promise<void> } = {}) {
+    const shortTrip = seedShortTripDefaults(defaultShortTripOptions(), preferences.defaults);
     shortTrip.areaPath = criteria?.areaPath ?? ''; shortTrip.shortlist = criteria?.shortlist ?? false;
     super(context, 'outing', { name: '', groups: [], step: 1, unresolved: [], shortTrip,
       filter: { text: '', area: shortTrip.areaPath, shortlist: shortTrip.shortlist, type: '', view: 'list' } }, draftId);
+    this.initialForm = shortTripForm(shortTrip);
   }
   protected meaningful(): boolean { return !!this.draft.data.shortTrip || !!this.draft.data.groups.length; }
   protected footer(): HTMLElement {
     const footer = super.footer();
     if (this.draft.phase === 'editing') {
       const close = footer.querySelector('button');
+      this.suggestButton = button(footer, 'Suggest a small journey', () => this.preview(), true);
+      footer.insertBefore(this.suggestButton, close);
       this.useButton = footer.createEl('button', { text: 'Use suggestion', cls: 'mod-cta' });
       this.useButton.onclick = () => { void this.finish(); };
       footer.insertBefore(this.useButton, close);
@@ -49,6 +57,7 @@ export class ShortTripModal extends PreparationModal<OutingPreparation> {
   private edited(): void {
     this.generation++; this.comparison = undefined; this.previewEl?.empty();
     this.reviewed(false);
+    this.updateSummary();
     this.changed();
   }
   private async redraw(): Promise<void> { this.edited(); await this.render(); }
@@ -59,48 +68,76 @@ export class ShortTripModal extends PreparationModal<OutingPreparation> {
     this.places = places; this.areas = areas;
     const options = this.options(), form = options.form!;
     this.titleEl.setText('I have about an hour');
-    this.contentEl.createEl('p', { text: 'Choose your start and available time. Review one small driving journey before preparing an outing.', cls: 'charity-hint' });
-    this.number(this.contentEl, 'Available minutes', form.budgetMinutes, value => { form.budgetMinutes = value; this.edited(); }, 1, 1440);
-    const budgets = this.contentEl.createDiv('charity-actions');
-    for (const minutes of [30, 60, 90, 120]) button(budgets, minutes + ' minutes', () => { form.budgetMinutes = String(minutes); return this.redraw(); }).setAttribute('aria-pressed', String(form.budgetMinutes === String(minutes)));
-    this.startingPoint(form);
+    this.contentEl.addClass('charity-short-trip');
+    const main = this.contentEl.createDiv('charity-short-trip-main');
+    this.startingPoint(main, form);
+    const time = main.createEl('section', { cls: 'charity-short-trip-time' });
+    this.number(time, 'Available time', form.budgetMinutes, value => { form.budgetMinutes = value; this.edited(); }, 1, 1440);
+    const budgets = time.createDiv({ cls: 'charity-actions charity-short-trip-presets', attr: { 'aria-label': 'Available time presets' } });
+    this.budgetButtons.clear();
+    for (const minutes of [30, 60, 90, 120]) {
+      const preset = button(budgets, minutes + ' min', () => { form.budgetMinutes = String(minutes); return this.redraw(); });
+      preset.setAttribute('aria-pressed', String(form.budgetMinutes === String(minutes))); this.budgetButtons.set(minutes, preset);
+    }
+    this.summaryEl = this.contentEl.createDiv({ cls: 'charity-short-trip-summary', attr: { 'aria-live': 'polite' } });
+    this.updateSummary();
+    this.adjustEl = details(this.contentEl, 'Adjust'); this.adjustEl.addClass('charity-short-trip-adjust');
+    this.adjustExpanded ??= this.needsAdjust(options, form);
+    this.adjustEl.open = this.adjustExpanded;
+    this.adjustEl.ontoggle = () => { if (this.adjustEl) this.adjustExpanded = this.adjustEl.open; };
+    const adjust = this.adjustEl;
+    this.text(adjust, 'Outing date', form.date, value => { form.date = value; this.edited(); }, 'date');
+    this.text(adjust, 'Departure time', form.departureTime, value => { form.departureTime = value; this.edited(); }, 'time');
+    this.text(adjust, 'Time zone', form.timeZone, value => { form.timeZone = value; this.edited(); });
     const area = options.areaPath === 'unassigned' ? 'Unassigned' : this.areas.find(item => item.path === options.areaPath)?.label ?? (options.areaPath ? 'Area unavailable' : 'All areas');
-    const selection = this.contentEl.createDiv('charity-actions');
+    const selection = adjust.createDiv('charity-actions');
     button(selection, area, () => new PickModal(this.context, [{ path: '', label: 'All areas' }, { path: 'unassigned', label: 'Unassigned' }, ...this.areas],
       item => item.label, item => { options.areaPath = item.path; return this.redraw(); }, 'Sources to consider').open());
     const shortlist = button(selection, 'Shortlist only', () => { options.shortlist = !options.shortlist; return this.redraw(); }); shortlist.setAttribute('aria-pressed', String(options.shortlist));
-    this.text(this.contentEl, 'Outing date', form.date, value => { form.date = value; this.edited(); }, 'date');
-    this.text(this.contentEl, 'Departure time', form.departureTime, value => { form.departureTime = value; this.edited(); }, 'time');
-    this.text(this.contentEl, 'Time zone', form.timeZone, value => { form.timeZone = value; this.edited(); });
-    const assumptions = details(this.contentEl, 'Adjust the small journey');
-    this.number(assumptions, 'Maximum stops', form.maxStops, value => { form.maxStops = value; this.edited(); }, 1, 5);
-    this.number(assumptions, 'Minutes per source', form.visitMinutes, value => { form.visitMinutes = value; this.edited(); }, 1, 1440);
-    new Setting(assumptions).setName('Return to starting point').addToggle(control => control.setValue(options.planning.end.kind === 'return').onChange(value => {
+    this.number(adjust, 'Maximum stops', form.maxStops, value => { form.maxStops = value; this.edited(); }, 1, 5);
+    this.number(adjust, 'Minutes per source', form.visitMinutes, value => { form.visitMinutes = value; this.edited(); }, 1, 1440);
+    new Setting(adjust).setName('Return to starting point').addToggle(control => control.setValue(options.planning.end.kind === 'return').onChange(value => {
       options.planning.end = { kind: value ? 'return' : 'last' }; this.edited();
     }));
-    this.contentEl.createEl('p', { text: 'Only sources with usable coordinates and a single or preferred saved parking location can be suggested. Missing or uncertain parking needs a choice in standard outing preparation.', cls: 'charity-hint' });
-    this.suggestButton = button(this.contentEl, 'Suggest a small journey', () => this.preview(), true);
+    const estimates = options.planning.estimates;
+    adjust.createEl('p', { text: 'Local estimates: driving distance × ' + estimates.driveMultiplier + ' at ' + estimates.driveKph + ' km/h; walking distance × ' + estimates.walkMultiplier + ' at ' + estimates.walkKph + ' km/h; ' + estimates.parkingMinutes + ' minutes to park. These are estimates, not road routes.', cls: 'charity-hint' });
+    adjust.createEl('p', { text: 'Only places with usable coordinates and a single or preferred saved parking location can be suggested. Use ordinary outing preparation to resolve other parking choices.', cls: 'charity-hint' });
+    if (this.preferences.remember) new Setting(adjust).setName('Remember these choices for next time').setDesc('Available time, maximum stops, visit time, return choice and a saved starting place. Entered coordinates are never remembered.').addToggle(control => control.setValue(options.rememberChoices === true).onChange(value => {
+      options.rememberChoices = value; this.edited();
+    }));
     this.previewEl = this.contentEl.createDiv({ cls: 'charity-short-trip-preview', attr: { 'aria-live': 'polite' } });
     // The initial time and location method are meaningful work even before the first keystroke.
     this.changed();
   }
-  private startingPoint(form: ShortTripForm): void {
-    const el = this.contentEl.createEl('section');
-    const method = new Setting(el).setName('Starting point');
-    button(method.settingEl, form.startKind === 'record' ? 'Saved source or parking' : 'Entered coordinates', () => new PickModal(this.context,
-      [{ kind: 'record' as const, label: 'Choose a saved source or parking' }, { kind: 'coordinates' as const, label: 'Enter coordinates' }],
-      item => item.label, item => { form.startKind = item.kind; return this.redraw(); }, 'Starting point method').open()).setAttribute('aria-label', 'Starting point method');
-    if (form.startKind === 'record') {
-      const counts = new Map<string, number>(); for (const place of this.places) counts.set(place.path, (counts.get(place.path) ?? 0) + 1);
-      const choices = this.places.filter(place => counts.get(place.path) === 1 && validateCoordinates(place.coordinates)).sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
-      const selected = choices.find(place => place.path === form.savedPath);
-      const saved = new Setting(el).setName('Saved starting point');
-      button(saved.settingEl, selected?.name ?? (form.savedPath ? 'Saved starting point unavailable' : 'Choose a starting point'), () => new PickModal(this.context, choices,
-        place => place.name + (place.kind === 'parking' ? ' (parking)' : ' (source)'), place => { form.savedPath = place.path; return this.redraw(); }, 'Saved starting point').open()).setAttribute('aria-label', 'Saved starting point');
-    } else {
+  private needsAdjust(options: ShortTripOptions, form: ShortTripForm): boolean {
+    const initial = this.initialForm, defaults = defaultShortTripOptions();
+    return ['date', 'departureTime', 'timeZone', 'maxStops', 'visitMinutes'].some(key => form[key as keyof ShortTripForm] !== initial[key as keyof ShortTripForm]) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(form.date) || !/^\d{2}:\d{2}$/.test(form.departureTime) || !form.timeZone.trim() ||
+      !!options.areaPath || options.shortlist || options.planning.end.kind !== 'last' || options.planning.mode !== 'hours' ||
+      JSON.stringify(options.planning.estimates) !== JSON.stringify(defaults.planning.estimates);
+  }
+  private updateSummary(): void {
+    const el = this.summaryEl; if (!el || !this.draft?.data.shortTrip) return;
+    const options = this.options(), form = options.form!, today = defaultShortTripOptions().planning.date;
+    const area = options.areaPath === 'unassigned' ? 'Unassigned' : this.areas.find(item => item.path === options.areaPath)?.label ?? (options.areaPath ? 'Area unavailable' : 'All areas');
+    el.empty();
+    for (const [minutes, preset] of this.budgetButtons) preset.setAttribute('aria-pressed', String(form.budgetMinutes === String(minutes)));
+    el.createEl('p', { text: (form.date === today ? 'Today' : form.date || 'Date needed') + ' · ' + (form.departureTime || 'Departure needed') + ' · ' + (form.timeZone || 'Time zone needed') + ' · ' + (form.budgetMinutes || '?') + ' min available' });
+    el.createEl('p', { text: 'Up to ' + (form.maxStops || '?') + ' places · ' + (form.visitMinutes || '?') + ' min each · ' + (options.planning.end.kind === 'return' ? 'Return to start' : 'Finish at last parking') + ' · ' + area + (options.shortlist ? ' · Shortlist only' : ''), cls: 'charity-hint' });
+  }
+  private startingPoint(parent: HTMLElement, form: ShortTripForm): void {
+    const el = parent.createEl('section', { cls: 'charity-short-trip-start' });
+    const counts = new Map<string, number>(); for (const place of this.places) counts.set(place.path, (counts.get(place.path) ?? 0) + 1);
+    const choices = this.places.filter(place => counts.get(place.path) === 1 && validateCoordinates(place.coordinates)).sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
+    const selected = choices.find(place => place.path === form.savedPath);
+    const start = new Setting(el).setName('Starting point');
+    const picker = () => new PickModal(this.context, [...choices.map(place => ({ path: place.path, label: place.name + (place.kind === 'parking' ? ' (parking)' : ' (source)') })), { path: '', label: 'Enter coordinates' }],
+      item => item.label, item => { form.startKind = item.path ? 'record' : 'coordinates'; if (item.path) form.savedPath = item.path; return this.redraw(); }, 'Starting point').open();
+    button(start.settingEl, form.startKind === 'record' ? selected?.name ?? (form.savedPath ? 'Starting point unavailable' : 'Choose a starting point') : 'Entered coordinates', picker).setAttribute('aria-label', 'Saved starting point');
+    if (form.startKind === 'coordinates') {
       this.text(el, 'Starting latitude', form.latitude, value => { form.latitude = value; this.edited(); });
       this.text(el, 'Starting longitude', form.longitude, value => { form.longitude = value; this.edited(); });
-      el.createEl('p', { text: 'Enter latitude, then longitude. Your device location is never requested.', cls: 'charity-hint' });
+      el.createEl('p', { text: 'Latitude, then longitude. Device location is never requested.', cls: 'charity-hint' });
     }
   }
   private text(parent: HTMLElement, name: string, value: string, change: (value: string) => void, type = 'text'): void {
@@ -128,14 +165,16 @@ export class ShortTripModal extends PreparationModal<OutingPreparation> {
       const estimate = preview.estimate;
       el.createEl('h3', { text: preview.groups.flatMap(group => group.stops).length + ' source(s) in about ' + Math.ceil(estimate.totalMinutes) + ' minutes' });
       el.createEl('p', { text: formatDistance(estimate.totalKm, normaliseDistanceUnit(this.context.settings.distanceUnit)) + ' estimated; finish about ' + formatPlanningTime(estimate.finishAt, preview.planning) });
-      el.createEl('p', { text: preview.planning.date + ' at ' + preview.planning.departureTime + ' (' + preview.planning.timeZone + ')' });
       const list = el.createEl('ol');
       for (const group of preview.groups) list.createEl('li', { text: 'Drive to ' + name(group.parkingPath) + '; walk to ' + group.stops.map(stop => name(stop.sourcePath)).join(', ') + '; return to the car.' });
       if (preview.planning.end.kind === 'return') el.createEl('p', { text: 'Return drive to your starting point is included.' });
       else el.createEl('p', { text: 'Ends at the final parking location. No return drive to your starting point is included.' });
       for (const stop of estimate.timeline) el.createEl('p', { text: name(stop.sourcePath) + ': ' + (stop.hoursStatus === 'unconfirmed' ? 'Hours unconfirmed' : 'Visit fits captured hours') + (stop.hoursChecked ? ' (checked ' + stop.hoursChecked + ')' : '') + '.' });
     }
-    for (const warning of preview.warnings) el.createEl('p', { text: warning, cls: 'charity-hint' });
+    if (preview.warnings.length) {
+      const warnings = details(el, 'What to check (' + preview.warnings.length + ')');
+      for (const warning of preview.warnings) warnings.createEl('p', { text: warning, cls: 'charity-hint' });
+    }
     for (const blocker of preview.blockers) el.createEl('p', { text: blocker, cls: 'charity-error' });
     this.reviewed(!!preview.estimate && !preview.blockers.length);
   }
@@ -149,7 +188,12 @@ export class ShortTripModal extends PreparationModal<OutingPreparation> {
       if (this.closed || token !== this.generation) return;
       this.comparison = fresh.preview; this.drawPreview(fresh.preview, fresh.places);
       this.status?.setText(fresh.preview.estimate ? 'Review the suggestion, then choose Use suggestion.' : 'Adjust these choices to try again.');
-    } catch (error) { if (!this.closed && token === this.generation) this.failure(error); }
+    } catch (error) {
+      if (!this.closed && token === this.generation) {
+        if (this.adjustEl) { this.adjustExpanded = true; this.adjustEl.open = true; }
+        this.failure(error);
+      }
+    }
     finally { if (!this.closed) this.setBusy(false); }
   }
   protected async finish(): Promise<void> {
@@ -171,7 +215,11 @@ export class ShortTripModal extends PreparationModal<OutingPreparation> {
         formatDistance(result.estimate!.totalKm, normaliseDistanceUnit(this.context.settings.distanceUnit)) + ' estimated. Recheck estimates after changing this journey.', ...result.warnings];
       delete data.shortTrip;
       this.setBusy(false); this.changed();
-      await this.closeAndContinue(() => this.onUse(this.draft.id));
+      const remember = result.options.rememberChoices && this.preferences.remember, defaults = shortTripDefaultsFromOptions(result.options);
+      await this.closeAndContinue(async () => {
+        await this.onUse(this.draft.id);
+        if (remember) try { await remember(defaults); } catch { new Notice('Journey preparation saved; defaults could not be remembered.'); }
+      });
       if (!this.closed) { this.draft.data = before; this.changed(); }
     } catch (error) { this.failure(error); }
     finally { if (!this.closed) this.setBusy(false); }

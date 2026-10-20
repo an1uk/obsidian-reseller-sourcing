@@ -1,3 +1,5 @@
+import { checkedShortTripDefaults } from '../outings/short-trip-preferences';
+import type { ShortTripDefaults } from '../outings/short-trip';
 import { hasControlCharacters, isRecord, isUnknownArray } from '../domain/guards';
 import { notebookFiles } from './files';
 import { propertyText } from '../domain/guards';
@@ -203,10 +205,26 @@ export class SourcingStore {
       this.settings.previousRoots = [...new Set(previous.previousRoots ?? [])].filter(value => value !== preview.root);
       this.settings.recentLocalities = (previous.recentLocalities ?? []).filter(path => path.startsWith(preview.root + '/Places/'));
       this.settings.areaHints = (previous.areaHints ?? []).filter(hint => hint.townPath.startsWith(preview.root + '/Places/') && hint.localityPath.startsWith(preview.root + '/Places/'));
+      if (this.settings.shortTripDefaults?.startPath && !this.scoped(this.settings.shortTripDefaults.startPath)) delete this.settings.shortTripDefaults.startPath;
       delete this.settings.clipperImports; delete this.settings.clipperNoticeFingerprint;
       try { await this.saveSettings(); }
       catch (error) { for (const key of Object.keys(this.settings)) delete (this.settings as unknown as Record<string, unknown>)[key]; Object.assign(this.settings, previous); throw error; }
       return preview;
+    });
+  }
+  /** Explicit reviewed preferences share this notebook's mutation queue and roll back on failed persistence. */
+  async rememberShortTripDefaults(value?: ShortTripDefaults): Promise<void> {
+    return this.serial(async () => {
+      const next = value === undefined ? undefined : checkedShortTripDefaults(value, this.root);
+      if (next?.startPath && !(await this.listPlaces()).some(place => place.path === next.startPath && validateCoordinates(place.coordinates)))
+        throw Error('Choose a saved starting place with valid coordinates before remembering these choices.');
+      const previous = this.settings.shortTripDefaults;
+      if (next === undefined) delete this.settings.shortTripDefaults; else this.settings.shortTripDefaults = structuredClone(next);
+      try { await this.saveSettings(); }
+      catch (error) {
+        if (previous === undefined) delete this.settings.shortTripDefaults; else this.settings.shortTripDefaults = previous;
+        throw error;
+      }
     });
   }
   async setup(): Promise<SetupReport> {

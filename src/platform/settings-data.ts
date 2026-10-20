@@ -1,3 +1,4 @@
+import { checkedShortTripDefaults, isShortTripDefaultsForRoot } from '../outings/short-trip-preferences';
 import { isRecord, isUnknownArray } from '../domain/guards';
 import { DEFAULT_SETTINGS } from '../types';
 import type { AreaHint, CaptureSnapshot, MoveEntry, MoveJournal, MoveSettingsSnapshot, Settings, TileSet } from '../types';
@@ -21,7 +22,8 @@ function moveEntry(value: unknown): value is MoveEntry {
 function settingsSnapshot(value: unknown): value is MoveSettingsSnapshot {
   return isRecord(value) && text(value.root) && recordOf(value.assets, asset) && recordOf(value.captureReceipts, text) &&
     recordOf(value.captureSnapshots, snapshot) && texts(value.previousRoots) && texts(value.recentLocalities) &&
-    (value.areaHints === undefined || isUnknownArray(value.areaHints) && value.areaHints.every(areaHint));
+    (value.areaHints === undefined || isUnknownArray(value.areaHints) && value.areaHints.every(areaHint)) &&
+    (value.shortTripDefaults === undefined || isShortTripDefaultsForRoot(value.shortTripDefaults, value.root));
 }
 function moveJournal(value: unknown): value is MoveJournal {
   return isRecord(value) && text(value.id) && (value.kind === 'notebook' || value.kind === 'locality' || value.kind === 'place-area' || value.kind === 'capture-archive') &&
@@ -87,6 +89,7 @@ export function parseSettings(value: unknown): Settings {
     if (!isUnknownArray(value.areaHints) || !value.areaHints.every(areaHint)) throw new Error('The saved address rules are invalid.');
     settings.areaHints = structuredClone(value.areaHints);
   }
+  if (value.shortTripDefaults !== undefined) settings.shortTripDefaults = checkedShortTripDefaults(value.shortTripDefaults, settings.root);
   if (value.clipperImports !== undefined) {
     if (!isRecord(value.clipperImports) || value.clipperImports.shop !== undefined && !clipperImport(value.clipperImports.shop) || value.clipperImports.parking !== undefined && !clipperImport(value.clipperImports.parking)) throw new Error('The saved Clipper import confirmations are invalid.');
     settings.clipperImports = {};

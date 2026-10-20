@@ -87,7 +87,7 @@ test('the exact shared plugin bundle evaluates in Android mode with all Node and
   assert.deepEqual(nativeRequests, []);
   const manifest = JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
   assert.equal(manifest.id, 'charity-sourcing');
-  assert.equal(manifest.version, '0.13.0');
+  assert.equal(manifest.version, '0.14.0');
   assert.equal(manifest.isDesktopOnly, false);
   assert.equal(manifest.minAppVersion, '1.14.4');
 });

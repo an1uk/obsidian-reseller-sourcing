@@ -5,7 +5,7 @@ import { buildRepeatedOutingPreparation, suggestedRepeatName } from '../outings/
 import { localDate } from '../storage/markdown';
 
 export function openShortTripPreparation(context: NotebookContext, draftId?: string): void {
-  new ShortTripModal(context, id => { new OutingPreparationModal(context, undefined, id).open(); }, draftId).open();
+  new ShortTripModal(context, id => { new OutingPreparationModal(context, undefined, id).open(); }, draftId, undefined, { defaults: context.settings.shortTripDefaults, remember: value => context.store.rememberShortTripDefaults(value) }).open();
 }
 
 /** Read current records before preparing a fresh outing; history is never changed here. */

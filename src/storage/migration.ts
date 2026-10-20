@@ -218,7 +218,8 @@ async function hintTownPath(app: App, target: string, root: string): Promise<str
 
 function settingsSnapshot(settings: Settings): MoveSettingsSnapshot {
   return structuredClone({ root: settings.root, assets: settings.assets, captureReceipts: settings.captureReceipts,
-    captureSnapshots: settings.captureSnapshots ?? {}, previousRoots: settings.previousRoots ?? [], recentLocalities: settings.recentLocalities ?? [], areaHints: settings.areaHints ?? [] });
+    captureSnapshots: settings.captureSnapshots ?? {}, previousRoots: settings.previousRoots ?? [], recentLocalities: settings.recentLocalities ?? [], areaHints: settings.areaHints ?? [],
+    ...(settings.shortTripDefaults ? { shortTripDefaults: settings.shortTripDefaults } : {}) });
 }
 export async function validateMovePreview(app: App, settings: Settings, preview: MovePreview): Promise<void> {
   if (settings.migration) throw new Error('A previous move needs recovery. Inspect it or use the explicit rollback action.');
@@ -287,6 +288,7 @@ export async function executeMove(app: App, settings: Settings, save: () => Prom
       return [remapPath(path, mapping), { ...snapshot, revision: entry?.afterHash ?? snapshot.revision }];
     }));
     settings.recentLocalities = (settings.recentLocalities ?? []).map(path => remapPath(path, mapping));
+    if (settings.shortTripDefaults?.startPath) settings.shortTripDefaults.startPath = remapPath(settings.shortTripDefaults.startPath, mapping);
     const movedHintRoot = preview.kind === 'notebook' ? preview.toRoot : settings.root;
     settings.areaHints = await Promise.all((settings.areaHints ?? []).map(async hint => {
       if (!mapping.has(hint.localityPath) && !mapping.has(hint.townPath)) return hint;
@@ -337,6 +339,7 @@ export async function rollbackMove(app: App, settings: Settings, save: () => Pro
     if (await bytesHash(await readBytes(app, file)) !== entry.beforeHash) throw new Error('Recovery verification failed: ' + entry.from);
   }
   await writeMoveCompletion(app, journal, 'rolled-back');
+  if (journal.settingsBefore.shortTripDefaults === undefined) delete settings.shortTripDefaults;
   Object.assign(settings, structuredClone(journal.settingsBefore)); delete settings.migration; await save();
   return { moved: checks.map(({ entry }) => entry.from), updated: [], backupRoot: journal.backupRoot };
 }

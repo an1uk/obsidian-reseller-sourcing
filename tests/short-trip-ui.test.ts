@@ -9,7 +9,7 @@ import * as units from '../src/units';
 import { validateCoordinates } from '../src/domain/coordinates';
 
 function all(el: any): any[] { return [el, ...el.children.flatMap(all)]; }
-function harness() {
+function harness(preferences: { defaults?: shortTrip.ShortTripDefaults; remember?: (defaults: shortTrip.ShortTripDefaults) => Promise<void> } = {}, draftId?: string) {
   const document = { hidden: false, addEventListener() {}, removeEventListener() {} };
   const win = { setTimeout: () => 1, clearTimeout() {} };
   class Element {
@@ -39,6 +39,7 @@ function harness() {
     settingEl: Element;
     constructor(parent: Element) { this.settingEl = parent.createDiv(); }
     setName(name: string) { this.settingEl.setAttribute('name', name); return this; }
+    setDesc(text: string) { this.settingEl.createEl('p', { text }); return this; }
     addText(run: (c: any) => void) {
       const inputEl = this.settingEl.createEl('input');
       const c: any = { inputEl, setValue(value: string) { inputEl.value = value; return c; }, onChange(callback: (value: string) => void) { inputEl.onchange = () => callback(inputEl.value); return c; } }; run(c); return this;
@@ -96,7 +97,7 @@ function harness() {
       throw Error('Unexpected import ' + id);
     },
   });
-  const modal: any = new ui.exports.ShortTripModal(context, (id: string) => { callbacks.push(id); events.push('callback'); assert.equal(events.at(-2), 'release'); });
+  const modal: any = new ui.exports.ShortTripModal(context, (id: string) => { callbacks.push(id); events.push('callback'); assert.equal(events.at(-2), 'release'); }, draftId, undefined, preferences);
   return { modal, context, saved, saves, callbacks, events, places, notices,
     chooseSaved: async (path: string) => { const button = all(modal.contentEl).find(el => el.attributes['aria-label'] === 'Saved starting point'); await button.onclick(); assert.ok(picker); const item = picker.choices.find(item => item.path === path); assert.ok(item); await picker.choose(item); },
     deferPlaces: (pending: Promise<void>) => { waitForPlaces = pending; },
@@ -152,7 +153,7 @@ test('fresh changes to parking or hours refuse use and require a new explicit pr
 
 test('failed asynchronous reads preserve form choices and never promote a previous comparison', async () => {
   const h = harness(); await open(h); await click(h.modal, 'Suggest a small journey');
-  input(h.modal, 'Available minutes', '90'); h.failHours();
+  input(h.modal, 'Available time', '90'); h.failHours();
   await click(h.modal, 'Suggest a small journey');
   assert.equal(h.callbacks.length, 0); assert.equal(findButton(h.modal, 'Use suggestion').disabled, true);
   assert.match(h.modal.status.textContent, /Hours read failed/); assert.equal(h.modal.options().form.budgetMinutes, '90');
@@ -183,9 +184,81 @@ test('the persistent footer keeps Use beside Close and the primary action follow
   assert.equal(use.disabled, true); assert.ok(suggest.cls.split(' ').includes('mod-cta'));
   await click(h.modal, 'Suggest a small journey');
   assert.equal(use.disabled, false); assert.equal(suggest.cls.split(' ').includes('mod-cta'), false);
-  input(h.modal, 'Available minutes', '90');
+  input(h.modal, 'Available time', '90');
   assert.equal(use.disabled, true); assert.ok(suggest.cls.split(' ').includes('mod-cta'));
   await click(h.modal, 'Suggest a small journey');
   h.places[1].coordinates = [51, 0.001]; await click(h.modal, 'Use suggestion');
   assert.equal(use.disabled, true); assert.ok(suggest.cls.split(' ').includes('mod-cta'));
+});
+
+test('new short trips expose two everyday choices with advanced inputs collapsed and a truthful summary', async () => {
+  const h = harness(); h.modal.open(); await drain();
+  const main = all(h.modal.contentEl).find(el => el.cls.split(' ').includes('charity-short-trip-main'));
+  assert.ok(main);
+  assert.deepEqual(all(main).filter(el => el.attributes.name).map(el => el.attributes.name), ['Starting point', 'Available time']);
+  assert.equal(h.modal.adjustEl.open, false);
+  const summary = all(h.modal.summaryEl).map(el => el.textContent).join(' ');
+  assert.match(summary, /Today/); assert.match(summary, /60 min available/); assert.match(summary, /20 min each/); assert.match(summary, /Finish at last parking/);
+  assert.match(summary, new RegExp(h.modal.options().form.departureTime));
+  assert.ok(summary.includes(h.modal.options().form.timeZone));
+  assert.deepEqual(all(main).filter(el => el.tag === 'button' && / min$/.test(el.textContent)).map(el => el.textContent), ['30 min', '60 min', '90 min', '120 min']);
+  assert.ok(findButton(h.modal, 'Suggest a small journey').parent.cls.includes('charity-modal-footer'));
+  await click(h.modal, '90 min');
+  assert.equal(h.modal.options().form.budgetMinutes, '90');
+  assert.equal(findButton(h.modal, '90 min').attributes['aria-pressed'], 'true');
+  input(h.modal, 'Available time', '42');
+  assert.equal(findButton(h.modal, '90 min').attributes['aria-pressed'], 'false');
+  assert.match(all(h.modal.summaryEl).map(el => el.textContent).join(' '), /42 min available/);
+});
+
+test('resuming raw draft values ignores new defaults and exposes incomplete or custom adjustments', async () => {
+  const h = harness({ defaults: { startPath: 'Book/Parking/Car.md', budgetMinutes: 120, maxStops: 5, visitMinutes: 15 } }, 'saved-one');
+  const options = shortTrip.defaultShortTripOptions(new Date('2026-10-19T09:00:00Z'));
+  options.form = { ...shortTrip.shortTripForm(options), date: '2026-10-19', departureTime: '', budgetMinutes: '27', maxStops: '2' };
+  h.saved.set('saved-one', { schema: 1, id: 'saved-one', kind: 'outing', root: 'Book', updatedAt: '2026-10-19T09:00:00Z', deferred: false, phase: 'editing', revision: 'old',
+    data: { name: '', groups: [], step: 1, unresolved: [], shortTrip: options, filter: { text: '', area: '', shortlist: false, type: '', view: 'list' } } });
+  h.modal.open(); await drain();
+  assert.equal(h.modal.options().form.budgetMinutes, '27'); assert.equal(h.modal.options().form.maxStops, '2');
+  assert.equal(h.modal.options().form.savedPath, ''); assert.equal(h.modal.options().form.departureTime, '');
+  assert.equal(h.modal.adjustEl.open, true);
+  assert.match(all(h.modal.summaryEl).map(el => el.textContent).join(' '), /Departure needed/);
+  h.modal.adjustEl.open = false; h.modal.adjustEl.ontoggle();
+  await click(h.modal, '30 min');
+  assert.equal(h.modal.adjustEl.open, false);
+  await click(h.modal, 'Suggest a small journey');
+  assert.equal(h.modal.adjustEl.open, true);
+});
+
+test('remembering is unchecked, requires reviewed successful handoff and persists only allowed choices', async () => {
+  const remembered: shortTrip.ShortTripDefaults[] = [];
+  const h = harness({ remember: async defaults => { remembered.push(defaults); } }); await open(h);
+  const remember = () => all(h.modal.contentEl).find(el => el.attributes.name === 'Remember these choices for next time').children.find((el: any) => el.type === 'checkbox');
+  assert.equal(remember().value, 'false');
+  remember().value = 'true'; remember().onchange(); await h.modal.flush();
+  assert.equal(h.saved.get('draft-short-trip').data.shortTrip.rememberChoices, true);
+  await click(h.modal, 'Suggest a small journey'); assert.deepEqual(remembered, []);
+  h.failSave(); await click(h.modal, 'Use suggestion'); assert.deepEqual(remembered, []);
+  assert.equal(h.modal.closed, false);
+  await click(h.modal, 'Use suggestion');
+  assert.equal(h.modal.closed, true); assert.deepEqual(remembered, [{ startPath: 'Book/Parking/Car.md', budgetMinutes: 60, maxStops: 3, visitMinutes: 20, returnToStart: false }]);
+});
+
+test('closing a remember-enabled draft saves its input without changing defaults', async () => {
+  let remembered = 0;
+  const h = harness({ remember: async () => { remembered++; } }); await open(h);
+  h.modal.options().rememberChoices = true;
+  input(h.modal, 'Available time', '90');
+  h.modal.close(); await drain();
+  assert.equal(remembered, 0); assert.equal(h.saved.get('draft-short-trip').data.shortTrip.rememberChoices, true);
+});
+
+test('a failed defaults save reports that handoff succeeded and does not reopen or apply it twice', async () => {
+  let remembered = 0;
+  const h = harness({ remember: async () => { remembered++; throw Error('Preferences unavailable'); } }); await open(h);
+  h.modal.options().rememberChoices = true;
+  await click(h.modal, 'Suggest a small journey'); await click(h.modal, 'Use suggestion');
+  assert.equal(h.modal.closed, true); assert.equal(h.callbacks.length, 1); assert.equal(remembered, 1);
+  assert.equal(h.saved.get('draft-short-trip').data.shortTrip, undefined);
+  assert.match(h.notices.join(' '), /Journey preparation saved; defaults could not be remembered/);
+  await h.modal.finish(); assert.equal(remembered, 1);
 });
