@@ -18,7 +18,17 @@ export interface VisitOperation {
   visitPath: string; visitId: string; beforeVisitHash?: string; beforeValues?: Record<string, unknown>;
   expected: VisitRecord; outingPath?: string; outingId?: string; stopId?: string;
 }
-export interface VisitInspection { visits: VisitRecord[]; warnings: string[]; }
+/** Identity hints only, retained for targeted review of notes excluded from history. */
+export interface VisitRejectedAssociation {
+  path: string;
+  id?: string;
+  sourcePath?: string;
+  outingPath?: string;
+  outingId?: string;
+  stopId?: string;
+  legacyOperationId?: string;
+}
+export interface VisitInspection { visits: VisitRecord[]; warnings: string[]; rejectedAssociations?: VisitRejectedAssociation[]; }
 
 export interface VisitDraftState { input: VisitInput; revision: string; visitRevision?: string; cleared?: boolean; }
 

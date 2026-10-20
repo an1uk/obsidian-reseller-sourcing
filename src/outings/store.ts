@@ -1,5 +1,6 @@
 import { propertyText } from '../domain/guards';
 import { validateVisitInput, visitInputShape } from '../visits/store';
+import { visitRefersToOutingStop } from './catch-up';
 import type { VisitStore } from '../visits/store';
 import type { App, TFile } from 'obsidian';
 import type { PlaceRecord } from '../types';
@@ -392,6 +393,12 @@ export class OutingStore {
         const expectedRevision = options.visitRevision ?? record.draft?.visitRevision;
         if (!expectedRevision || expectedRevision !== existing.revision) throw Error('The linked visit changed or has no reviewed comparison. Reopen its details before saving; personal text has been kept.');
         if (existing.id !== stop.visitId || existing.sourcePath !== place.path || existing.outingId !== record.id || existing.stopId !== stopId) throw Error('This stop points to a different visit. Review its links before editing.');
+      }
+      if (!stop.visitPath) {
+        const inspection = await this.host.visits.inspect();
+        if ([...inspection.visits, ...(inspection.rejectedAssociations ?? [])].some(visit => visitRefersToOutingStop(record, stop, visit))) {
+          throw Error('A saved visit already refers to this outing stop. Review its links before adding another visit.');
+        }
       }
       await this.host.visits.assertSourceAvailableNow(place.path, operationId);
       const sourceRaw = await this.host.app.vault.read(sourceFile);

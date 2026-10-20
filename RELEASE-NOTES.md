@@ -1,11 +1,9 @@
-Reseller sourcing 0.12.0 is an early release for desktop and Android.
+Reseller sourcing 0.13.0 is an early release for desktop and Android.
 
-- Restores maps in existing location notes, with focused parking context and clear missing-location controls.
-- Adds Edit place with explicit saving, preserved drafts, personal names and conflict checks.
-- Adds sortable desktop columns and phone cards with a Sort control.
-- Adds area, type, rating, shortlist, status, visits and location filters, presets and optional local nearby searches.
-- Reuses current browsing criteria when choosing an outing, without selecting stops automatically.
+- Repeat a finished outing as a fresh editable plan, retaining the chosen order and valid parking while keeping historical visits separate.
+- Plan a short sourcing trip from a time budget, with an explicit starting point, optional area/shortlist filters and one reviewed suggestion.
+- Catch up on visited stops after an outing, adding notes or purchase counts through the existing draft-preserving editor.
 
-The same three plugin files work on desktop and Android. Clipper exports remain v0.4.2; no re-import is needed. Existing records and examples are not reset.
+The same plugin files support both platforms. Clipper exports remain v0.4.2; no re-import is needed. Existing examples are not reset. See VALIDATION.md for the measured verification scope and remaining checks.
 
-This is a standard release. See [validation and remaining acceptance](https://github.com/an1uk/obsidian-reseller-sourcing/blob/0.12.0/VALIDATION.md) for verified test scope and outstanding checks. Earlier releases remain available.
+Verification: 623 automated tests passed, with three optional integration checks skipped. Thirteen physical Android workflow checks passed, alongside native desktop and map checks. See VALIDATION.md for scope and outstanding live-browser, sync and external-routing checks.

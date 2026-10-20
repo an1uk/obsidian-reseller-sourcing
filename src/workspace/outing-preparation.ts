@@ -16,8 +16,8 @@ import { defaultPlaceQuery, normalisePlaceQuery, normalisePlaceSort, queryPlaces
 const stops = (groups: OutingGroup[]) => groups.flatMap(g => g.stops);
 export class OutingPreparationModal extends PreparationModal<OutingPreparation> {
   private places: PlaceRecord[] = []; private areas: LocalityRecord[] = []; private visited = new Set<string>();
-  constructor(context: NotebookContext, existingPath?: string, draftId?: string, criteria?: { query: PlaceQuery; sort: PlaceSort }) {
-    super(context, 'outing', { name: '', groups: [], step: 1, unresolved: [], filter: { text: '', area: '', shortlist: false, type: '', view: 'list' }, ...(existingPath ? { existingPath } : {}), ...(criteria ? { placeQuery: serialisePlaceQuery(criteria.query), placeSort: criteria.sort, filter: { text: criteria.query.text, area: criteria.query.area, shortlist: criteria.query.shortlist, type: criteria.query.sourceType, view: 'list' as const } } : {}) }, draftId);
+  constructor(context: NotebookContext, existingPath?: string, draftId?: string, criteria?: { query: PlaceQuery; sort: PlaceSort }, seed?: OutingPreparation) {
+    super(context, 'outing', seed ?? { name: '', groups: [], step: 1, unresolved: [], filter: { text: '', area: '', shortlist: false, type: '', view: 'list' }, ...(existingPath ? { existingPath } : {}), ...(criteria ? { placeQuery: serialisePlaceQuery(criteria.query), placeSort: criteria.sort, filter: { text: criteria.query.text, area: criteria.query.area, shortlist: criteria.query.shortlist, type: criteria.query.sourceType, view: 'list' as const } } : {}) }, draftId);
   }
   protected meaningful() { return !!(this.draft.data.placeQuery || this.draft.data.groups.length || this.draft.data.name || this.draft.data.filter.area || this.draft.data.filter.text); }
   private name(path: string) { return this.places.find(p => p.path === path)?.name ?? path.split('/').pop()!.replace(/\.md$/, ''); }
@@ -43,6 +43,7 @@ export class OutingPreparationModal extends PreparationModal<OutingPreparation> 
     [this.places, this.areas] = await Promise.all([this.context.store.listPlaces(), this.context.store.listLocalities()]);
     this.visited = new Set((await this.context.store.visits.list()).map(v => v.sourcePath)); if (this.closed) return;
     const d = this.draft.data;
+    if (!this.draft.revision && this.meaningful()) this.changed();
     if (d.existingPath && !d.existingRevision) {
       const existing = await this.context.store.outings.get(d.existingPath); if (this.closed) return;
       if (existing.operation || existing.draft) throw Error('Finish the saved visit before changing this outing.');
@@ -52,6 +53,10 @@ export class OutingPreparationModal extends PreparationModal<OutingPreparation> 
     const steps = this.contentEl.createDiv({ cls: 'charity-preparation-steps', attr: { 'aria-label': 'Preparation stage' } });
     ['Choose places', 'Review journey', 'Ready to go'].forEach((label, i) => steps.createSpan({ text: (i + 1) + '. ' + label, cls: i + 1 === d.step ? 'is-current' : '', attr: i + 1 === d.step ? { 'aria-current': 'step' } : {} }));
     button(this.contentEl, 'Back', () => d.step > 1 ? this.stage((d.step - 1) as 1 | 2) : this.close());
+    if (d.reviewWarnings?.length) {
+      const review = details(this.contentEl, 'Review this new plan'); review.open = true;
+      for (const message of d.reviewWarnings) review.createEl('p', { text: message, cls: 'charity-hint' });
+    }
     if (d.step === 1) this.choosePlaces(); else if (d.step === 2) this.review(); else this.ready();
   }
   private choosePlaces() {
@@ -102,7 +107,10 @@ export class OutingPreparationModal extends PreparationModal<OutingPreparation> 
       for (const s of g.stops) {
         const row = section.createDiv('charity-compact-row'); row.createSpan({ text: this.name(s.sourcePath) });
         const place = this.places.find(p => p.path === s.sourcePath);
-        if (!place) row.createEl('p', { text: 'Place no longer exists. Remove it before saving.', cls: 'charity-error' });
+        if (s.status === 'pending' && (!place || place.properties.shop_closed === true)) {
+          row.createEl('p', { text: !place ? 'Place no longer exists. Remove it before saving.' : 'This source is permanently closed. Remove it before saving.', cls: 'charity-error' });
+          if (s.status === 'pending') button(row, 'Remove unavailable place', () => this.remove(s));
+        }
         if (s.status !== 'pending') continue;
         const options = place ? resolveParking(place, this.places).choices : [];
         const unresolved = d.unresolved.includes(s.sourcePath);
@@ -121,7 +129,7 @@ export class OutingPreparationModal extends PreparationModal<OutingPreparation> 
       draft: () => { if (this.closed) throw Error('Preparation closed.'); return { id: this.draft.id, path: d.existingPath ?? '', name: this.outingName(), status: 'planned', createdAt: '', revision: d.existingRevision ?? '', groups: structuredClone(d.groups), planning: d.planning }; },
       onApplyDraft: (groups, planning) => { if (this.closed) throw Error('Preparation closed.'); d.groups = structuredClone(groups); d.planning = structuredClone(planning); void this.redraw(); },
     }).open()); improve.disabled = !!d.unresolved.length;
-    const next = button(el, 'Ready to go', () => this.stage(3), true); next.disabled = !!d.unresolved.length || stops(d.groups).some(s => !this.places.some(p => p.path === s.sourcePath));
+    const next = button(el, 'Ready to go', () => this.stage(3), true); next.disabled = !stops(d.groups).length || !!d.unresolved.length || stops(d.groups).some(s => s.status === 'pending' && !this.places.some(p => p.path === s.sourcePath && p.properties.shop_closed !== true));
   }
   private outingName() { const d = this.draft.data; return d.name.trim() || (this.areas.find(a => a.path === d.filter.area)?.name ?? 'Sourcing') + ' ' + (d.planning?.date ?? localDate()); }
   private ready() {

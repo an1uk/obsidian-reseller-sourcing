@@ -14,6 +14,8 @@ import { StructuredVisitModal, renderVisitFields, visitDateSuggestion, visitInpu
 import type { VisitRecord } from '../visits/types';
 export { OutingPreparationModal as NewOutingModal } from '../workspace/outing-preparation';
 import { OutingPreparationModal as NewOutingModal } from '../workspace/outing-preparation';
+import { openShortTripPreparation, repeatOuting } from './outing-shortcuts';
+import { renderOutingCatchup } from './outing-catchup';
 
 const clone = <T>(value: T): T => structuredClone(value);
 const stopsOf = (record: { groups: OutingGroup[] }): OutingStop[] => record.groups.flatMap(group => group.stops);
@@ -31,7 +33,7 @@ async function editing<T>(plugin: NotebookContext, run: () => Promise<T>): Promi
 export async function renderOutingsHome(plugin: NotebookContext, owner: Component, el: HTMLElement, isCurrent: () => boolean = () => true): Promise<void> {
   const outings = await plugin.store.outings.list(); if (!isCurrent()) return;
   renderContextBanner(plugin, el); el.addClass('charity-outing');
-  const actions = el.createDiv('charity-actions'); button(actions, 'New outing', () => new NewOutingModal(plugin).open(), true);
+  const actions = el.createDiv('charity-actions'); button(actions, 'New outing', () => new NewOutingModal(plugin).open(), true); button(actions, 'I have about an hour', () => openShortTripPreparation(plugin));
   if (!outings.length) { el.createEl('p', { text: 'Create an outing from your shortlist or choose sources by area. Progress belongs to the outing; your shop shortlist is independent.', cls: 'charity-empty-state' }); return; }
   for (const state of ['active', 'planned', 'finished'] as const) {
     const values = outings.filter(record => record.status === state); if (!values.length) continue;
@@ -42,7 +44,8 @@ export async function renderOutingsHome(plugin: NotebookContext, owner: Componen
       row.createEl('strong', { text: record.name }); row.createEl('p', { text: progress(record), cls: 'charity-outing-summary' });
       const actions = row.createDiv('charity-actions');
       button(actions, state === 'active' ? 'Continue outing' : 'Open outing', () => plugin.openFile(record.path), state === 'active');
-      if (state !== 'active') button(actions, state === 'finished' ? 'Resume unfinished stops' : 'Start outing', async () => {
+      if (state === 'finished') button(actions, 'Repeat outing', () => repeatOuting(plugin, record.path, isCurrent));
+      if (state === 'planned' || state === 'finished' && stopsOf(record).some(stop => stop.status === 'pending')) button(actions, state === 'finished' ? 'Resume unfinished stops' : 'Start outing', async () => {
         await editing(plugin, async () => { await plugin.store.outings.start(record.path, record.revision); await plugin.openFile(record.path); });
       });
     }
@@ -92,24 +95,29 @@ async function sourceContext(plugin: NotebookContext, el: HTMLElement, place: Pl
     hours.createEl('p', { text: 'A saved snapshot. Check the listing if timing matters.', cls: 'charity-hint' });
   }
 }
-export async function renderOuting(plugin: NotebookContext, owner: Component, el: HTMLElement, path: string, isCurrent: () => boolean = () => true): Promise<void> {
+export async function renderOuting(plugin: NotebookContext, owner: Component, el: HTMLElement, path: string, isCurrent: () => boolean = () => true, openCatchup?: () => void | Promise<void>): Promise<void> {
   const [record, places, visits] = await Promise.all([plugin.store.outings.get(path), plugin.store.listPlaces(), plugin.store.visits.list()]); if (!isCurrent()) return;
   const visitRecords = new Map(visits.map(visit => [visit.path, visit]));
   el.addClass('charity-outing'); el.createEl('p', { text: record.status + ' · ' + progress(record), cls: 'charity-outing-summary' });
   const act = (run: () => Promise<unknown>) => editing(plugin, run);
   const primary = el.createDiv('charity-actions charity-outing-primary');
   if (record.exampleBackground) button(primary, 'Resume outing', () => act(() => plugin.store.outings.start(path, record.revision)), true);
-  if (record.status === 'finished') button(primary, 'Review visits', () => new OutingVisitsModal(plugin, path).open(), true);
+  const catchup = openCatchup ?? (() => { new OutingCatchupModal(plugin, path).open(); });
+  if (record.status === 'finished') {
+    button(primary, 'Catch up on visits', catchup, true);
+    button(primary, 'Repeat outing', () => repeatOuting(plugin, path, isCurrent));
+  }
   const tools = details(el, 'Outing tools'); tools.setAttribute('data-charity-section', 'outing-tools');
   const actions = tools.createDiv('charity-actions');
-  if (record.status !== 'finished') button(actions, 'Review visits', () => new OutingVisitsModal(plugin, path).open());
+  button(actions, 'Review all visits', () => new OutingVisitsModal(plugin, path).open());
+  if (record.status !== 'finished' && stopsOf(record).some(stop => stop.status === 'visited')) button(actions, 'Catch up on visits', catchup);
   const route = button(actions, plugin.externalActions === 'preview' ? 'Preview route in Google Maps' : 'Open route in Google Maps', () => new OutingRouteModal(plugin, path).open());
   const planner = button(actions, 'Plan journey', () => new OutingPlannerModal(plugin, { path }).open());
   planner.disabled = !!record.operation || !!record.draft;
   if (planner.disabled) planner.title = 'Finish, resume or discard the saved visit draft before planning.';
   route.disabled = !!record.operation;
   if (record.operation) route.title = 'Complete or resolve the unfinished visit save before exporting a route.';
-  if (record.status !== 'active' && !record.operation) button(record.status === 'planned' ? primary : actions, record.status === 'finished' ? 'Resume unfinished stops' : 'Start outing', () => act(() => plugin.store.outings.start(path, record.revision)), record.status === 'planned');
+  if (record.status !== 'active' && !record.operation && (record.status !== 'finished' || stopsOf(record).some(stop => stop.status === 'pending'))) button(record.status === 'planned' ? primary : actions, record.status === 'finished' ? 'Resume unfinished stops' : 'Start outing', () => act(() => plugin.store.outings.start(path, record.revision)), record.status === 'planned');
   if (!record.operation && !record.draft) button(actions, 'Edit stops and order', () => new NewOutingModal(plugin, path).open());
   if (record.status === 'active' && !record.operation) button(actions, 'Finish outing', () => new FinishOutingModal(plugin, record).open());
   if (record.operation) {
@@ -217,6 +225,47 @@ function renderStopVisitActions(context: NotebookContext, row: HTMLElement, acti
   } else if (stop.status === 'skipped') button(actions, 'Record visit instead', () => new OutingVisitModal(context, outing.path, stop.id).open());
   else if (outing.status === 'active' || outing.status === 'finished') button(actions, 'Record visit', () => new OutingVisitModal(context, outing.path, stop.id).open());
 }
+/** Ordinary outing notes can open the same catch-up view without leaving their pane. */
+export class OutingCatchupModal extends Modal {
+  private owner = new Component();
+  private closed = false;
+  private generation = 0;
+  private timer?: number;
+  constructor(private context: NotebookContext, private path: string) { super(context.app); }
+  onOpen(): void {
+    markInputModal(this); this.titleEl.setText('Catch up on visits'); this.modalEl.addClass('charity-outing-modal'); this.owner.load();
+    const refresh = (file: { path: string }) => {
+      if (!file.path.startsWith(this.context.root + '/')) return;
+      modalWindow(this).clearTimeout(this.timer);
+      this.timer = modalWindow(this).setTimeout(() => { void this.load().catch(error => { if (!this.closed) new Notice(errorText(error)); }); }, 150);
+    };
+    this.owner.registerEvent(this.context.app.vault.on('create', refresh));
+    this.owner.registerEvent(this.context.app.vault.on('modify', refresh));
+    this.owner.registerEvent(this.context.app.vault.on('delete', refresh));
+    this.owner.registerEvent(this.context.app.vault.on('rename', (file, oldPath) => {
+      if (oldPath === this.path) this.path = file.path;
+      refresh(file);
+    }));
+    void this.load().catch(error => { if (!this.closed) this.contentEl.createEl('p', { text: errorText(error), cls: 'charity-error' }); });
+  }
+  private async load(): Promise<void> {
+    if (this.closed) return;
+    const generation = ++this.generation, current = () => !this.closed && generation === this.generation;
+    const scroll = this.contentEl.scrollTop;
+    const focus = this.contentEl.ownerDocument.activeElement?.closest('[data-charity-stop]')?.getAttribute('data-charity-stop');
+    const next = this.contentEl.createDiv(); next.detach();
+    const path = this.path;
+    await renderOutingCatchup(this.context, this.owner, next, path, stopId => {
+      new OutingVisitModal(this.context, path, stopId, () => this.load()).open();
+    }, current, () => !this.closed && this.path === path);
+    if (!current()) return;
+    button(next.createDiv('charity-actions'), 'Close', () => this.close());
+    this.contentEl.replaceChildren(next); this.contentEl.scrollTop = scroll;
+    if (focus) Array.from(this.contentEl.querySelectorAll<HTMLElement>('[data-charity-stop]')).find(row => row.getAttribute('data-charity-stop') === focus)?.querySelector('button')?.focus({ preventScroll: true });
+  }
+  onClose(): void { this.closed = true; this.generation++; modalWindow(this).clearTimeout(this.timer); this.owner.unload(); }
+}
+
 export class OutingVisitsModal extends Modal {
   private closed = false;
   private owner = new Component();
@@ -300,7 +349,7 @@ export class OutingVisitModal extends Modal {
   private visitRevision?: string;
   private confirmSkipped = false;
   private background = () => { if (this.contentEl.ownerDocument?.hidden) void this.flush().catch(error => this.draftFailure(error)); };
-  constructor(private plugin: NotebookContext, private path: string, private stopId: string) { super(plugin.app); }
+  constructor(private plugin: NotebookContext, private path: string, private stopId: string, private afterSave?: () => void | Promise<void>) { super(plugin.app); }
   onOpen(): void { markInputModal(this);
     if (!(this.finishEditing = this.plugin.beginEditing())) { this.close(); return; }
     this.titleEl.setText('Record visit'); this.modalEl.addClass('charity-outing-visit-modal');
@@ -337,7 +386,7 @@ export class OutingVisitModal extends Modal {
     const footer = el.createDiv('charity-modal-footer');
     this.status = footer.createDiv({ cls: 'charity-outing-draft-status', attr: { role: 'status', 'aria-live': 'polite' } });
     if (this.record.draft) this.status.setText('Saved draft restored');
-    button(footer, 'Save visit and continue', () => this.saveVisit(), true);
+    button(footer, this.afterSave ? 'Save visit' : 'Save visit and continue', () => this.saveVisit(), true);
     button(footer, 'Close', async () => { await this.flush(); this.close(); });
   }
   private schedule(): void {
@@ -375,7 +424,10 @@ export class OutingVisitModal extends Modal {
     try {
       await this.flush(); this.status.setText('Saving visit…');
       this.record = await this.plugin.store.outings.recordVisit(this.path, this.stopId, this.fields?.snapshot() ?? clone(this.input), { revision: this.record.revision, operationId: this.record.draft?.operationId, confirmSkipped: this.confirmSkipped, visitRevision: this.visitRevision });
-      this.completed = true; this.setSaving(false); this.close(); await this.plugin.openFile(this.path); new Notice('Visit saved; next stop ready');
+      this.completed = true; this.setSaving(false); this.close();
+      try { if (this.afterSave) await this.afterSave(); else await this.plugin.openFile(this.path); }
+      catch (error) { new Notice('Visit saved. Reopen the outing to continue: ' + errorText(error)); return; }
+      new Notice(this.afterSave ? 'Visit saved' : 'Visit saved; next stop ready');
     } catch (error) {
       this.status.setText('Not completed: ' + errorText(error)); this.status.addClass('charity-error');
       try { this.record = await this.plugin.store.outings.get(this.path); } catch { /* Keep the draft and reported error. */ }
@@ -389,7 +441,7 @@ export class OutingVisitModal extends Modal {
     this.contentEl.createEl('p', { text: 'The visit save needs completion. Its original input is retained. Retry completion before editing or advancing this stop.', cls: 'charity-error' });
     button(this.contentEl, 'Retry completion', async () => {
       this.record = await this.plugin.store.outings.resumeVisit(this.path);
-      this.completed = true; this.close(); new Notice('Visit saved; stop marked visited');
+      this.completed = true; this.close(); await this.afterSave?.(); new Notice('Visit saved; stop marked visited');
     }, true);
     this.contentEl.createEl('p', { text: 'Cancel unsaved attempt keeps the draft. A visit already written must be completed and will not be deleted.', cls: 'charity-hint' });
     button(this.contentEl, 'Cancel unsaved attempt', async () => {

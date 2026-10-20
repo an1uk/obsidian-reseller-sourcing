@@ -18,6 +18,7 @@ export function checkedRoute(root: string, raw: unknown): WorkspaceRoute {
   if (r.screen === 'home' || r.screen === 'places' || r.screen === 'outings' || r.screen === 'history' || r.screen === 'more') return { screen: r.screen };
   if (typeof r.path !== 'string') return { screen: 'home' };
   const route = routeForPath(root,r.path);
+  if (r.screen === 'outing-catchup' && route?.screen === 'outing') return { screen: 'outing-catchup', path: route.path };
   if (!route || route.screen !== r.screen) return { screen: 'home' };
   if (route.screen === 'place' && (r.section === 'overview' || r.section === 'map' || r.section === 'visits' || r.section === 'details')) route.section = r.section;
   return route;

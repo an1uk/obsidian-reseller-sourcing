@@ -9,6 +9,7 @@ import { notebookFiles } from '../storage/files';
 import { isPlaceEditPreparation, placeEditReceiptFor, type PlaceEditPreparation } from '../place-edit/model';
 import { readNote } from '../storage/markdown';
 import { serialisePlaceQuery } from './place-query';
+import { isShortTripOptions } from '../outings/short-trip';
 interface Host { app: App; root(): string; exclusive<T>(run: () => Promise<T>): Promise<T>; folder(path: string): Promise<void>; }
 const fileLike = (v: unknown): v is TFile => !!v && typeof v === 'object' && 'extension' in v;
 const validId = (id: unknown): id is string => typeof id === 'string' && /^[a-zA-Z0-9-]{8,100}$/.test(id);
@@ -29,6 +30,13 @@ function outingData(value: unknown, inside: (path: unknown) => path is string): 
   }
   if (value.existingPath !== undefined && !inside(value.existingPath) || value.existingRevision !== undefined && typeof value.existingRevision !== 'string' || value.startAfterSave !== undefined && typeof value.startAfterSave !== 'boolean') return false;
   if (value.planning !== undefined) validatePlanningOptions(value.planning);
+  if (value.reviewWarnings !== undefined && (!isUnknownArray(value.reviewWarnings) || value.reviewWarnings.length > 100 || !value.reviewWarnings.every(v => typeof v === 'string' && v.length <= 2000))) return false;
+  if (value.shortTrip !== undefined) {
+    const shortTrip = value.shortTrip;
+    if (!isShortTripOptions(shortTrip) || shortTrip.areaPath && shortTrip.areaPath !== 'unassigned' && !inside(shortTrip.areaPath)) return false;
+    if (shortTrip.form?.savedPath && !inside(shortTrip.form.savedPath)) return false;
+    for (const anchor of [shortTrip.planning.start, shortTrip.planning.end]) if (anchor?.kind === 'record' && !inside(anchor.path)) return false;
+  }
   if (value.placeQuery !== undefined && !queryData(value.placeQuery, inside)) return false;
   if (value.placeSort !== undefined && (!isRecord(value.placeSort) || !member(value.placeSort.key, ['name', 'area', 'type', 'rating', 'lastVisited', 'shortlist', 'distance']) || value.placeSort.direction !== 'asc' && value.placeSort.direction !== 'desc')) return false;
   return true;

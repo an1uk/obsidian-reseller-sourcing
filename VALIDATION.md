@@ -1,6 +1,20 @@
-# Validation: Reseller sourcing 0.12.0
+# Validation: Reseller sourcing 0.13.0
 
 One shared desktop/Android plugin, ID **charity-sourcing**, requiring Obsidian **1.14.4** or newer. Clipper templates remain **v0.4.2**. This document distinguishes repeatable public-tree checks from historical native and physical acceptance. Private captures, screenshots, device details, vault paths and test harnesses are not included in the repository.
+
+## 0.13.0 verification
+
+On 20 October 2026, source/CSS lint, type checking, the production build, packaging and licence checks passed. The portable suite completed 626 tests: **623 passed, zero failed and three optional integration checks skipped**, as described below. Frozen historical example outputs remained unchanged. No runtime dependency or browser-template change was needed.
+
+**12 isolated native Obsidian scenarios passed**, with no console errors and an unchanged unrelated-vault/configuration guard. They covered repeat-outing history preservation, short-trip preparation and draft restoration, reviewed handoff without an automatic outing save, catch-up additions and edits without duplicate visits, original dates and finished status, and real/practice isolation. Layout checks used 360/390/420 px in light/dark themes, including simulated open-keyboard heights and reachable footer actions. These are scoped functional and layout checks, not an accessibility certification.
+
+The final native run exercised immediate Add-to-Edit catch-up actions across passive redraws. Its JavaScript, manifest and stylesheet hashes are checked against the local package before installation. The guarded installation preserves existing notebook files and personal preferences; updates to generated help are available to new notebooks or through explicit repair rather than rewriting this notebook during installation.
+
+**13 physical Android workflow checks passed** over Wi-Fi debugging in a separate test vault: the 12 outing-workflow scenarios plus native text entry, Close-retained input, draft resumption and explicit saving. Checks covered invalid short-trip drafts across cold reopening, saved parking selection, reviewed suggestions without automatic creation, fresh repeated outings, retained original history, unknown versus zero purchases, original visit dates, immediate catch-up edits without duplicate visits, and saved results after reopening. Short-trip and visit actions remained reachable with the real Android keyboard open in light/dark themes.
+
+Physical marker taps, persistent popup actions, fictional listing previews and explicit dismissal also passed. The three installed assets were pulled back and matched the exact native-tested/package SHA-256 hashes. Installation preserved existing notes, settings and saved work. Test mutations stayed inside fictional Examples; pre-existing records and personal preferences remained unchanged apart from expected practice coordination state. No runtime code change was needed for this acceptance pass.
+
+Interactive Chrome capture, real notebook sync, live external-routing capacity and location-permission checks remain outstanding for this release. These scoped physical checks do not establish every Android device or external handler. Results below the 0.12.0 heading describe the earlier published release.
 
 ## 0.12.0 verification
 

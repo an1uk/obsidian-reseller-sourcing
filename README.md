@@ -1,8 +1,8 @@
 # Reseller sourcing
 
-An Obsidian plugin for planning sourcing trips, remembering places and recording visits. Version **0.12.0** is an **early release** for desktop and Android. Your records remain readable Markdown and YAML; inventory and sales can stay in your existing tools.
+An Obsidian plugin for planning sourcing trips, remembering places and recording visits. Version **0.13.0** is an **early release** for desktop and Android. Your records remain readable Markdown and YAML; inventory and sales can stay in your existing tools.
 
-Download the [0.12.0 release](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.12.0) for desktop or Android. Source: [an1uk/obsidian-reseller-sourcing](https://github.com/an1uk/obsidian-reseller-sourcing). The plugin is not yet listed in Community Plugins.
+Download the [0.13.0 release](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.13.0) for desktop or Android. Source: [an1uk/obsidian-reseller-sourcing](https://github.com/an1uk/obsidian-reseller-sourcing). The plugin is not yet listed in Community Plugins.
 
 ## Start in the workspace
 
@@ -20,7 +20,13 @@ Home offers one main action: **Add your first place**, **Continue outing**, **Co
 
 Back keeps progress. Meaningful preparation changes save after a short pause and flush on close or backgrounding. Saving, saved and failed states are shown. Interrupted completion uses durable receipts so retrying does not create another outing.
 
+For a familiar route, choose **Repeat outing** on a finished outing. It prepares a fresh plan with new stop identities, today's date and reviewed parking. Previous visits stay in the finished outing. Missing or closed places and changed parking are flagged for review. Date-specific opening-hours overrides are cleared; current captured hours are used when reviewing the journey.
+
+**I have about an hour**, on Home or Outings, offers one small, editable suggestion. Choose a saved starting point or enter coordinates, then review the date, departure time, timezone and available minutes. It defaults to 60 minutes, up to three sources and 20 minutes per visit, with return to start off. Area and shortlist are optional filters. Driving suggestions require linked parking with usable pins; excluded places and uncertain hours are explained. Estimates use the existing local planner. Previewing creates no outing; **Use suggestion** continues in the ordinary saved preparation. Closing keeps the short-trip draft, including incomplete input.
+
 Active outings lead with the current stop, directions and **Record visit**. Saving a visit returns to the outing. Stops can also be skipped or marked visited without notes; finished outings retain their visit history.
+
+**Catch up on visits** is available after visiting stops, including after finishing the outing. It lists only visited stops and shows their saved quick notes and purchase counts. Add or edit one visit at a time through the normal editor; saved dates remain editable and late entries suggest the original stop date in the outing timezone. Unknown purchases remain distinct from zero. Closing keeps unfinished input, and saving returns to catch-up. Pending and skipped stops remain in the ordinary outing view.
 
 The optional local planner defaults to **Fit opening hours**, **20 minutes per source**, **miles**, and finishing at the last source. Return to start is optional. It supports a start, date, departure time, timezone, endpoint, deadline and per-source overrides. Suggestions use straight-line estimates and recognised weekly hours. They require review and are not optimal road routes or live traffic calculations.
 
@@ -76,7 +82,7 @@ The optional Guided tour can be deleted independently. Deleted example records o
 
 ## Build and install
 
-For the ready-to-install package, download **charity-sourcing-0.12.0.zip** from the [release page](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.12.0). The same release also provides **main.js**, **manifest.json** and **styles.css** separately, plus **release-checksums.json** with SHA-256 hashes. Desktop and Android use the same files. Follow the manual installation steps below.
+For the ready-to-install package, download **charity-sourcing-0.13.0.zip** from the [release page](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.13.0). The same release also provides **main.js**, **manifest.json** and **styles.css** separately, plus **release-checksums.json** with SHA-256 hashes. Desktop and Android use the same files. Follow the manual installation steps below.
 
 Use **Node.js 22 or newer** and npm:
 

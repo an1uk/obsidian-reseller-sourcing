@@ -3,6 +3,7 @@ import { Component, Modal, Notice, Setting } from 'obsidian';
 import type { NotebookContext } from '../notebook-context';
 import type { PlaceRecord, VisitInput } from '../types';
 import type { VisitRecord, VisitOperation } from '../visits/types';
+import { catchupVisitDate } from '../outings/catch-up';
 import { localDate } from '../storage/markdown';
 import { details, errorText, renderContextBanner, propertyText } from '../ui';
 
@@ -21,12 +22,10 @@ export interface VisitEditor {
   setDisabled(value: boolean): void;
   dispose?(): void;
 }
-export function visitDateSuggestion(record?: { startedAt?: string }, stop?: { completedAt?: string }): { date: string; origin: string } {
-  for (const [value, origin] of [[stop?.completedAt, 'Suggested from recorded stop completion'], [record?.startedAt, 'Suggested from outing start']] as const) {
-    if (value && Number.isFinite(new Date(value).getTime())) return { date: localDate(new Date(value)), origin };
-  }
-  return { date: localDate(), origin: 'Suggested from today' };
+export function visitDateSuggestion(record?: { startedAt?: string; finishedAt?: string; planning?: { timeZone?: string; date?: string } }, stop?: { completedAt?: string }): { date: string; origin: string } {
+  return catchupVisitDate(record, stop);
 }
+
 export function visitInputFromRecord(record: VisitRecord): VisitInput {
   return {
     observations: record.observations, finds: record.finds, nextTime: record.nextTime,

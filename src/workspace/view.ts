@@ -8,7 +8,9 @@ import { PlacePreparationModal } from './place-preparation';
 import { button, ChangeAreaModal, CreditsModal, details, errorText, external, LocalityModal, manualDraft, PickModal, SetupModal, VisitModal } from '../ui';
 import { inspectHome } from '../home/overview';
 import { chooseVisitSource, resume } from '../ui/home';
-import { renderOuting, renderOutingsHome } from '../ui/outings';
+import { renderOuting, renderOutingsHome, OutingVisitModal } from '../ui/outings';
+import { renderOutingCatchup } from '../ui/outing-catchup';
+import { openShortTripPreparation } from '../ui/outing-shortcuts';
 import { renderVisitsHub } from '../ui/visit-history';
 import { renderVisitHistory, renderVisitNote } from '../ui/visits';
 import { VisitInsightsModal } from '../ui/visit-insights';
@@ -46,6 +48,7 @@ export class SourcingWorkspace extends ItemView {
   private body?: HTMLElement; private shell?: HTMLElement; private nav?: HTMLElement; private map?: PlaceMap;
   private history: WorkspaceRoute[] = []; private moreCount = 0;
   private pendingRefresh = false;
+  private navigationRevision = 0;
   get root() { return this.state.root; }
   get currentPlacePath() { return this.state.route.screen === 'place' ? this.state.route.path : undefined; }
   constructor(leaf: WorkspaceLeaf, private host: NotebookUiHost) { super(leaf); }
@@ -58,6 +61,7 @@ export class SourcingWorkspace extends ItemView {
     return state as unknown as Record<string, unknown>;
   }
   async setState(raw: unknown, result: ViewStateResult) {
+    this.navigationRevision++;
     const state = checkedViewState(raw);
     if (state) { this.body = undefined; this.state = state; }
     await this.bindContext(); await this.render(); await super.setState(raw, result);
@@ -144,6 +148,7 @@ export class SourcingWorkspace extends ItemView {
       expanded: Array.from(this.body.querySelectorAll<HTMLDetailsElement>('details[open]')).map(d => d.querySelector('summary')?.textContent ?? '') };
   }
   async navigate(route: WorkspaceRoute, back = false) {
+    this.navigationRevision++;
     this.remember(); if (!back && JSON.stringify(route) !== this.key()) this.history.push(structuredClone(this.state.route));
     if (this.history.length > 40) this.history.shift(); this.state.route = route;
     await this.render(false); this.app.workspace.requestSaveLayout();
@@ -176,7 +181,7 @@ export class SourcingWorkspace extends ItemView {
     // Keep the displayed screen until its replacement is ready, avoiding blank flashes during vault updates.
     const shell = this.contentEl.createDiv({ cls: 'charity-workspace' }); shell.detach(); this.shell = shell; shell.toggleClass('is-mobile', Platform.isMobileApp);
     this.nav = this.shell.createEl('nav', { cls: 'charity-workspace-nav', attr: { 'aria-label': 'Sourcing navigation' } });
-    const current = ['place', 'area'].includes(this.state.route.screen) ? 'places' : this.state.route.screen === 'outing' ? 'outings' : this.state.route.screen === 'visit' ? 'history' : this.state.route.screen;
+    const current = ['place', 'area'].includes(this.state.route.screen) ? 'places' : ['outing', 'outing-catchup'].includes(this.state.route.screen) ? 'outings' : this.state.route.screen === 'visit' ? 'history' : this.state.route.screen;
     for (const [screen, label] of [['home', 'Home'], ['places', 'Places'], ['outings', 'Outings'], ['history', 'History']] as const) {
       const b = button(this.nav, label, () => this.navigate({ screen })); b.setAttribute('aria-current', current === screen ? 'page' : 'false'); b.toggleClass('is-current', current === screen);
     }
@@ -193,7 +198,16 @@ export class SourcingWorkspace extends ItemView {
       else if (route.screen === 'history') { el.createEl('h1', { text: 'History' }); const content = el.createDiv(); await renderVisitsHub(c, this.owner, content, this.state.history ??= {}, active); }
       else if (route.screen === 'more') await this.renderMore(el);
       else if (route.screen === 'place') await this.renderPlace(el, route.path, route.section ?? 'overview');
-      else if (route.screen === 'outing') { const record = await c.store.outings.get(route.path); el.createEl('h1', { text: record.name }); await renderOuting(c, this.owner, el, route.path, active); }
+      else if (route.screen === 'outing') { const record = await c.store.outings.get(route.path); el.createEl('h1', { text: record.name }); await renderOuting(c, this.owner, el, route.path, active, () => this.navigate({ screen: 'outing-catchup', path: route.path })); }
+      else if (route.screen === 'outing-catchup') {
+        el.createEl('h1', { text: 'Catch up on visits' });
+        button(el.createDiv('charity-actions'), 'Back to outing', () => this.navigate({ screen: 'outing', path: route.path }));
+        const catchupContent = el.createDiv(), navigationRevision = this.navigationRevision, catchupPath = route.path;
+        const actionCurrent = () => !this.closed && navigationRevision === this.navigationRevision && this.root === c.root && this.state.route.screen === 'outing-catchup' && this.state.route.path === catchupPath;
+        await renderOutingCatchup(c, this.owner, catchupContent, route.path, stopId => {
+          new OutingVisitModal(c, catchupPath, stopId, async () => { if (actionCurrent()) await this.render(); }).open();
+        }, active, actionCurrent);
+      }
       else if (route.screen === 'visit') { await renderVisitNote(c, this.owner, el, route.path, active); }
       else if (route.screen === 'area') await this.renderArea(el, route.path);
     } catch (e) { if (active()) this.showError(e); }
@@ -210,7 +224,7 @@ export class SourcingWorkspace extends ItemView {
     }
   }
   private openPreparation(draft: PreparationDraft) {
-    if (draft.kind === 'outing') new OutingPreparationModal(this.context!, undefined, draft.id).open();
+    if (draft.kind === 'outing') { if (draft.data.shortTrip) openShortTripPreparation(this.context!, draft.id); else new OutingPreparationModal(this.context!, undefined, draft.id).open(); }
     else if (draft.kind === 'place-edit') void resumePlaceEditor(this.context!, draft.id).catch(e => new Notice(errorText(e)));
     else new PlacePreparationModal(this.context!, manualDraft('shop'), undefined, draft.id).open();
   }
@@ -225,13 +239,13 @@ export class SourcingWorkspace extends ItemView {
     if (!overview.sources.length) { lead.createEl('p', { text: 'Add a place you know. A name is enough to start.' }); button(lead, 'Add your first place', () => c.newPlace('shop'), true); }
     else if (active) { lead.createEl('p', { text: active.name }); button(lead, 'Continue outing', () => this.navigate({ screen: 'outing', path: active.path }), true); }
     else if (planning) {
-      lead.createEl('p', { text: planning.data.name || 'Continue choosing places and reviewing the journey.' });
+      lead.createEl('p', { text: planning.data.name || (planning.data.shortTrip ? 'Your short-trip preferences are saved.' : 'Continue choosing places and reviewing the journey.') });
       button(lead, 'Continue planning', () => this.openPreparation(planning), true);
       button(lead, 'Not now', async () => { await c.store.preparations.defer(planning.id, planning.revision); await this.render(); });
-    } else { lead.createEl('p', { text: 'Start with an area or your shortlist.' }); button(lead, 'Choose where to go', () => c.newOuting(), true); }
+    } else { lead.createEl('p', { text: 'Start with an area or your shortlist.' }); button(lead, 'Choose where to go', () => c.newOuting(), true); button(lead, 'I have about an hour', () => openShortTripPreparation(c)); }
     const quick = el.createDiv('charity-actions'); button(quick, 'Record a visit', () => chooseVisitSource(c)); button(quick, 'Find a place', () => this.navigate({ screen: 'places' }));
     const saved = details(el, 'Saved for later');
-    for (const d of prep.drafts) { const row = saved.createDiv('charity-compact-row'); row.createSpan({ text: d.kind === 'outing' ? d.data.name || 'Outing preparation' : d.kind === 'place-edit' ? 'Edit ' + (d.data.snapshot.values.displayName || d.data.snapshot.path.split('/').pop()?.replace(/\.md$/, '') || 'place') : d.data.capture.name || 'Place preparation' }); button(row, d.phase === 'completing' ? 'Review saved completion' : 'Resume', () => this.openPreparation(d)); }
+    for (const d of prep.drafts) { const row = saved.createDiv('charity-compact-row'); row.createSpan({ text: d.kind === 'outing' ? d.data.name || (d.data.shortTrip ? 'Short trip' : 'Outing preparation') : d.kind === 'place-edit' ? 'Edit ' + (d.data.snapshot.values.displayName || d.data.snapshot.path.split('/').pop()?.replace(/\.md$/, '') || 'place') : d.data.capture.name || 'Place preparation' }); button(row, d.phase === 'completing' ? 'Review saved completion' : 'Resume', () => this.openPreparation(d)); }
     for (const item of [overview.primary, ...overview.others].filter((v): v is NonNullable<typeof v> => !!v && v.outingPath !== active?.path)) {
       const row = saved.createDiv('charity-compact-row'); row.createSpan({ text: item.sourceName || item.label }); button(row, item.kind.endsWith('operation') ? 'Review save' : 'Resume', () => resume(c, item));
     }

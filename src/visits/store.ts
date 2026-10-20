@@ -3,7 +3,7 @@ import type { App, TFile } from 'obsidian';
 import type { PlaceRecord, VisitInput } from '../types';
 import { safeFileName } from '../domain';
 import { hashText, linkPath, readNote, updateNoteProperty, wiki, writeNote } from '../storage/markdown';
-import type { ColourEvidence, VisitInspection, VisitOperation, VisitRecord, VisitSaveOptions, VisitDraftState, VisitSavedWorkInspection } from './types';
+import type { ColourEvidence, VisitInspection, VisitOperation, VisitRecord, VisitSaveOptions, VisitDraftState, VisitSavedWorkInspection, VisitRejectedAssociation } from './types';
 import { hasControlCharacters, isUnknownArray } from '../domain/guards';
 import { notebookFiles } from '../storage/files';
 interface VisitHost {
@@ -130,22 +130,39 @@ export class VisitStore {
     if (!this.host.examples && p.sourcing_example === true) throw Error('Fictional visits belong in Examples.');
     return { place, file, raw, identity: propertyText(p.source_capture_id) };
   }
+  private rejectedAssociation(path: string, properties: Record<string, unknown>): VisitRejectedAssociation {
+    const association: VisitRejectedAssociation = { path };
+    for (const [key, field] of [['id', 'visit_id'], ['outingId', 'outing_id'], ['stopId', 'stop_id'], ['legacyOperationId', 'legacy_operation_id']] as const) {
+      if (safeId(properties[field])) association[key] = properties[field];
+    }
+    if (typeof properties.source === 'string') {
+      const source = linkPath(properties.source); if (this.ownsSource(source)) association.sourcePath = source;
+    }
+    if (typeof properties.outing === 'string') {
+      const outing = linkPath(properties.outing); if (this.owns(outing, 'Outings')) association.outingPath = outing;
+    }
+    return association;
+  }
   async inspect(): Promise<VisitInspection> {
-    const visits: VisitRecord[] = [], warnings: string[] = [], sources = new Set((await this.host.listPlaces()).filter(p => p.kind === 'shop').map(p => p.path));
+    const visits: VisitRecord[] = [], warnings: string[] = [], rejectedAssociations: VisitRejectedAssociation[] = [];
+    const associations = new Map<string, VisitRejectedAssociation>(), sources = new Set((await this.host.listPlaces()).filter(p => p.kind === 'shop').map(p => p.path));
     for (const f of notebookFiles(this.host.app.vault, this.host.root() + '/Visits').filter(f => this.owns(f.path, 'Visits'))) {
+      let association: VisitRejectedAssociation = { path: f.path };
       try {
         const raw = await this.host.app.vault.read(f), p = readNote(raw).properties;
         if (!this.host.examples && p.sourcing_example === true) continue;
+        association = this.rejectedAssociation(f.path, p); associations.set(f.path, association);
         const v = await readVisitRecord(raw, f.path);
-        if (!sources.has(v.sourcePath)) { warnings.push('Visit source is missing or outside this notebook: ' + f.path); continue; }
-        if (v.outingPath && !this.owns(v.outingPath, 'Outings')) { warnings.push('Visit outing is outside this notebook: ' + f.path); continue; }
+        if (!sources.has(v.sourcePath)) { warnings.push('Visit source is missing or outside this notebook: ' + f.path); rejectedAssociations.push(association); continue; }
+        if (v.outingPath && !this.owns(v.outingPath, 'Outings')) { warnings.push('Visit outing is outside this notebook: ' + f.path); rejectedAssociations.push(association); continue; }
         visits.push(v);
-      } catch (e) { warnings.push(f.path + ': ' + String(e instanceof Error ? e.message : e)); }
+      } catch (e) { warnings.push(f.path + ': ' + String(e instanceof Error ? e.message : e)); rejectedAssociations.push(association); }
     }
     const duplicate = new Set(visits.filter((v, i) => visits.some((w, j) => j !== i && w.id === v.id)).map(v => v.id));
     for (const id of duplicate) warnings.push('Duplicate visit identifier ' + id + ': conflicting notes are excluded until reviewed.');
+    for (const visit of visits.filter(value => duplicate.has(value.id))) rejectedAssociations.push(associations.get(visit.path) ?? { path: visit.path });
     warnings.push(...(await this.operationsWithWarnings()).warnings);
-    return { visits: visits.filter(v => !duplicate.has(v.id)).sort((a, b) => b.visitDate.localeCompare(a.visitDate) || b.recordedAt.localeCompare(a.recordedAt) || a.id.localeCompare(b.id)), warnings };
+    return { visits: visits.filter(v => !duplicate.has(v.id)).sort((a, b) => b.visitDate.localeCompare(a.visitDate) || b.recordedAt.localeCompare(a.recordedAt) || a.id.localeCompare(b.id)), warnings, rejectedAssociations };
   }
   async list(sourcePath?: string): Promise<VisitRecord[]> { return (await this.inspect()).visits.filter(v => !sourcePath || v.sourcePath === sourcePath); }
   async get(path: string): Promise<VisitRecord> {

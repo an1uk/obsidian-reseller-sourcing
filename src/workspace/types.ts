@@ -1,10 +1,11 @@
 import type { AreaSelection, CaptureDraft } from '../types';
 import type { OutingGroup, OutingPlanningOptions } from '../outings/types';
 import type { PlaceEditPreparation } from '../place-edit/model';
+import type { ShortTripOptions } from '../outings/short-trip';
 export type WorkspaceRoute =
   | { screen: 'home' | 'places' | 'outings' | 'history' | 'more' }
   | { screen: 'place'; path: string; section?: 'overview' | 'map' | 'visits' | 'details' }
-  | { screen: 'outing' | 'visit' | 'area'; path: string };
+  | { screen: 'outing' | 'outing-catchup' | 'visit' | 'area'; path: string };
 export interface WorkspaceViewState {
   root: string; route: WorkspaceRoute;
   places?: { query: string; area: string; kind: string; shortlist: boolean; view: 'list' | 'map'; criteria?: import('./place-query').PlaceQuery; sort?: import('./place-query').PlaceSort };
@@ -13,6 +14,8 @@ export interface WorkspaceViewState {
 }
 export interface OutingPreparation {
   startAfterSave?: boolean;
+  shortTrip?: ShortTripOptions;
+  reviewWarnings?: string[];
   name: string; groups: OutingGroup[]; planning?: OutingPlanningOptions; step: 1 | 2 | 3; unresolved: string[];
   filter: { text: string; area: string; shortlist: boolean; type: string; view: 'list' | 'map' };
   existingPath?: string; existingRevision?: string;
