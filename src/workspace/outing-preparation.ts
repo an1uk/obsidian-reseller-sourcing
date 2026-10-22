@@ -11,13 +11,13 @@ import { localDate } from '../storage/markdown';
 import { proposeOutingGroups } from '../outings/domain';
 import { OutingPlannerModal } from '../ui/outing-planner';
 import { mountPlaceMap } from '../map';
-import { defaultPlaceQuery, normalisePlaceQuery, normalisePlaceSort, queryPlaces, serialisePlaceQuery, type PlaceQuery, type PlaceSort } from './place-query';
+import { defaultPlaceQuery, normalisePlaceQuery, normalisePlaceSort, queryPlaces, type PlaceQuery, type PlaceSort } from './place-query';
 
 const stops = (groups: OutingGroup[]) => groups.flatMap(g => g.stops);
 export class OutingPreparationModal extends PreparationModal<OutingPreparation> {
   private places: PlaceRecord[] = []; private areas: LocalityRecord[] = []; private visited = new Set<string>();
   constructor(context: NotebookContext, existingPath?: string, draftId?: string, criteria?: { query: PlaceQuery; sort: PlaceSort }, seed?: OutingPreparation) {
-    super(context, 'outing', seed ?? { name: '', groups: [], step: 1, unresolved: [], filter: { text: '', area: '', shortlist: false, type: '', view: 'list' }, ...(existingPath ? { existingPath } : {}), ...(criteria ? { placeQuery: serialisePlaceQuery(criteria.query), placeSort: criteria.sort, filter: { text: criteria.query.text, area: criteria.query.area, shortlist: criteria.query.shortlist, type: criteria.query.sourceType, view: 'list' as const } } : {}) }, draftId);
+    super(context, 'outing', seed ?? { name: '', groups: [], step: 1, unresolved: [], filter: { text: '', area: '', shortlist: false, type: '', view: 'list' }, ...(existingPath ? { existingPath } : {}), ...(criteria ? { placeQuery: normalisePlaceQuery(criteria.query), placeSort: normalisePlaceSort(criteria.sort), filter: { text: criteria.query.text, area: criteria.query.area, shortlist: criteria.query.shortlist, type: criteria.query.sourceType, view: 'list' as const } } : {}) }, draftId);
   }
   protected meaningful() { return !!(this.draft.data.placeQuery || this.draft.data.groups.length || this.draft.data.name || this.draft.data.filter.area || this.draft.data.filter.text); }
   private name(path: string) { return this.places.find(p => p.path === path)?.name ?? path.split('/').pop()!.replace(/\.md$/, ''); }

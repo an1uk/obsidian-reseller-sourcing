@@ -180,9 +180,9 @@ test('failed locality move rollback restores outing wikilinks and user notes', a
   const f = await ready();
   const before = await f.vault.read(getFile(f, f.outing.path));
   const rename = f.vault.renameFile.bind(f.vault); let moved = 0;
-  f.app.fileManager.renameFile = async (file, path) => { if (++moved === 2) throw Error('Interrupted move'); return rename(file as TFile, path); };
+  f.app.vault.rename = async (file, path) => { if (++moved === 2) throw Error('Interrupted move'); return rename(file as TFile, path); };
   await assert.rejects(f.store.moveLocality(f.town.path, 'Renamed town'), /Interrupted move/);
-  f.app.fileManager.renameFile = rename;
+  f.app.vault.rename = rename;
   await f.store.rollbackMove();
   assert.equal(await f.vault.read(getFile(f, f.outing.path)), before);
   assert.equal((await f.store.outings.get(f.outing.path)).groups[0]!.stops[0]!.sourcePath, f.one.path);

@@ -1,4 +1,4 @@
-import type { WorkspaceViewState } from './types';
+import type { WorkspaceRoute, WorkspaceViewState } from './types';
 import type { VisitsHubState } from '../ui/visit-history';
 import { isRecord, isUnknownArray } from '../domain/guards';
 import { checkedRoute } from './routes';
@@ -26,4 +26,36 @@ export function checkedViewState(raw: unknown): WorkspaceViewState | undefined {
     state.positions[key] = { scroll: position.scroll, ...(typeof position.focus === 'string' ? { focus: position.focus } : {}), ...(isUnknownArray(position.expanded) ? { expanded: position.expanded.filter((v): v is string => typeof v === 'string') } : {}) };
   }
   return state;
+}
+
+/** Keep pane navigation and restoration state attached to records after reviewed moves. */
+export function remapWorkspacePaths(state: WorkspaceViewState, history: WorkspaceRoute[], from: string, to: string, subtree = false): void {
+  const remap = (path: string) => path === from ? to : subtree && path.startsWith(from + '/') ? to + path.slice(from.length) : path;
+  const route = (value: WorkspaceRoute) => { if ('path' in value) value.path = remap(value.path); };
+  route(state.route); history.forEach(route);
+  const places = state.places;
+  if (places) {
+    places.area = remap(places.area);
+    if (places.criteria) {
+      places.criteria.area = remap(places.criteria.area);
+      const reference = places.criteria.nearby?.reference;
+      if (reference?.kind === 'place') reference.path = remap(reference.path);
+    }
+  }
+  if (state.history?.expandedVisits) state.history.expandedVisits = Object.fromEntries(Object.entries(state.history.expandedVisits).map(([path, expanded]) => [remap(path), expanded]));
+  const insights = state.history?.insights;
+  if (insights?.sourcePath) insights.sourcePath = remap(insights.sourcePath);
+  if (insights?.areaPath) insights.areaPath = remap(insights.areaPath);
+  if (state.positions) {
+    const positions: NonNullable<WorkspaceViewState['positions']> = {};
+    for (const [key, position] of Object.entries(state.positions)) {
+      let nextKey = key;
+      try {
+        const saved: unknown = JSON.parse(key);
+        if (isRecord(saved) && typeof saved.path === 'string') nextKey = JSON.stringify({ ...saved, path: remap(saved.path) });
+      } catch { /* Older restoration keys remain usable as stored. */ }
+      positions[nextKey] = { ...position, ...(position.focus?.startsWith('place:') ? { focus: 'place:' + remap(position.focus.slice(6)) } : {}) };
+    }
+    state.positions = positions;
+  }
 }

@@ -138,17 +138,30 @@ function hoursFor(stop: OutingStop, hours: Record<string, PlanningHours>, option
     return { open, close };
   }) } : parsePlanningHours(captured.hours, dayNames[weekday]);
   const previous = override ? { known: false, intervals: [] } : parsePlanningHours(captured.hours, dayNames[(weekday + 6) % 7]);
+  const tomorrow = override ? { known: false, intervals: [] } : parsePlanningHours(captured.hours, dayNames[(weekday + 1) % 7]);
+  const tomorrowStart = epochAtMinute(date, 1440, options.timeZone);
   const intervals: SourceHours['intervals'] = [];
   let known = today.known;
-  for (const row of [{ date, hours: today, prior: false }, { date: adjacentDate(date, -1), hours: previous, prior: true }]) {
+  for (const row of [
+    { date, hours: today, offset: 0 },
+    { date: adjacentDate(date, -1), hours: previous, offset: -1 },
+    { date: adjacentDate(date, 1), hours: tomorrow, offset: 1 },
+  ]) {
     for (const interval of row.hours.intervals) {
-      if (row.prior && interval.close <= 1440) continue;
+      if (row.offset < 0 && interval.close <= 1440 || row.offset > 0 && tomorrowStart === null) continue;
       const open = epochAtMinute(row.date, interval.open, options.timeZone), close = epochAtMinute(row.date, interval.close, options.timeZone);
-      if (open === null || close === null || close <= open) { known = false; continue; }
+      if (open === null || close === null || close <= open) { if (row.offset <= 0) known = false; continue; }
       intervals.push({ open, close });
     }
   }
-  return { known, intervals: intervals.sort((a, b) => a.open - b.open), checked: override ? 'Outing override' : captured.hoursChecked };
+  const joined: SourceHours['intervals'] = [];
+  for (const interval of intervals.sort((a, b) => a.open - b.open)) {
+    const previous = joined.at(-1);
+    if (previous && interval.open <= previous.close) previous.close = Math.max(previous.close, interval.close);
+    else joined.push(interval);
+  }
+  // Tomorrow may extend continuous opening, but a later reopening must not postpone the outing.
+  return { known, intervals: joined.filter(interval => tomorrowStart === null || interval.open < tomorrowStart), checked: override ? 'Outing override' : captured.hoursChecked };
 }
 const cloneGroups = (groups: readonly OutingGroup[]): OutingGroup[] => groups.map(group => ({ ...group, stops: group.stops.map(stop => ({ ...stop })) }));
 const frozenGroup = (group: OutingGroup): boolean => group.stops.some(stop => stop.status !== 'pending');

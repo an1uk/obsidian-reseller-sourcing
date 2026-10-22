@@ -133,3 +133,20 @@ test('ambiguous departure clock changes block suggestions rather than silently s
   const result = run([p, a], opts);
   assert.equal(result.estimate, null); assert.match(result.blockers.join(' '), /ambiguous/);
 });
+
+test('short trips retain a 24-hour source when its visit crosses midnight', () => {
+  const p = parking(), a = source('All night', p), opts = options({ budgetMinutes: 60 });
+  opts.planning.departureTime = '23:40';
+  const hours = { [a.path]: weekly('Open 24 hours') };
+  const result = run([p, a], opts, hours);
+  assert.deepEqual(paths(result), [a.path]);
+  assert.equal(result.estimate!.totalMinutes, 25);
+  assert.equal(result.estimate!.timeline[0]!.hoursStatus, 'open');
+  assert.equal(result.estimate!.finishAt, Date.parse('2026-10-20T00:05Z'));
+  for (const next of ['Closed', '00:10-17:00']) {
+    hours[a.path] = { hours: ['Monday, Open 24 hours', 'Tuesday, ' + next], hoursChecked: '2026-10-18' };
+    const closed = run([p, a], opts, hours);
+    assert.equal(closed.estimate, null);
+    assert.deepEqual(paths(closed), []);
+  }
+});

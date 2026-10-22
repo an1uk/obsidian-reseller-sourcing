@@ -251,7 +251,6 @@ export class StructuredVisitModal extends Modal {
   private timer?: number;
   private queue: Promise<void> = Promise.resolve();
   private persisted = '';
-  private operationId = crypto.randomUUID();
   private background = () => { if (this.contentEl.ownerDocument?.hidden) void this.flush().catch(error => this.draftFailure(error)); };
   constructor(private context: NotebookContext, private sourcePath: string, private visitPath?: string) { super(context.app); }
   onOpen(): void { markInputModal(this);
@@ -288,6 +287,15 @@ export class StructuredVisitModal extends Modal {
     if (visit) this.input = visitInputFromRecord(visit);
     if (draft) this.input = clone(draft.input);
     this.persisted = draft ? JSON.stringify(this.input) : '';
+    if (draft?.savedVisit) {
+      this.visit = draft.savedVisit; this.completed = true;
+      this.contentEl.createEl('p', { text: 'This visit was already recorded. Only its unfinished draft cleanup remains; saved visit details and source assessments will not be applied again.', cls: 'charity-hint' });
+      this.contentEl.createEl('p', { text: visitSummary(draft.savedVisit), cls: 'charity-hint' });
+      this.status = this.contentEl.createDiv({ cls: 'charity-save-status', attr: { role: 'status', 'aria-live': 'polite' } });
+      const finish = this.contentEl.createEl('button', { text: 'Finish draft cleanup', cls: 'mod-cta' }); finish.onclick = () => { void this.save(); };
+      const open = this.contentEl.createEl('button', { text: 'Open saved visit' }); open.onclick = () => { void this.context.openFile(draft.savedVisit!.path).catch(error => new Notice(errorText(error))); };
+      const close = this.contentEl.createEl('button', { text: 'Close' }); close.onclick = () => this.close(); return;
+    }
     if (visit && draft && !this.visitRevision) {
       this.contentEl.createEl('p', { text: 'This older draft has no saved visit comparison. Its entered details are kept below. Review the saved visit, then explicitly discard this draft and reopen the editor before saving.', cls: 'charity-error' });
       this.contentEl.createEl('p', { text: 'Saved draft actual date: ' + this.input.visitDate + ' · ' + visitSummary({ ...visit, ...this.input }), cls: 'charity-hint' });
@@ -348,22 +356,30 @@ export class StructuredVisitModal extends Modal {
     this.contentEl.querySelectorAll<HTMLButtonElement>('button').forEach(button => button.disabled = value);
   }
   private async save(): Promise<void> {
-    if (this.closed || this.saving || !this.fields) return;
+    if (this.closed || this.saving) return;
     if (this.completed) {
       this.setSaving(true);
       try { await this.context.store.visits.clearDraft(this.sourcePath, this.visitPath, this.draftRevision); this.setSaving(false); this.finishAndClose(); }
-      catch (error) { this.setSaving(false); this.fields.setDisabled(true); this.status.setText('Visit saved; draft cleanup still needs completion: ' + errorText(error)); }
+      catch (error) { this.setSaving(false); this.fields?.setDisabled(true); this.status.setText('Visit saved; draft cleanup still needs completion: ' + errorText(error)); }
       return;
     }
+    if (!this.fields) return;
     try { this.fields.validate(); } catch (error) { this.status.setText(errorText(error)); this.status.addClass('charity-error'); return; }
     this.setSaving(true);
     try {
       await this.flush(); this.status.setText('Saving visit...'); this.status.removeClass('charity-error');
       const input = this.fields.snapshot();
-      const draft = await this.context.store.visits.getDraftState(this.sourcePath, this.visitPath);
+      let draft = await this.context.store.visits.getDraftState(this.sourcePath, this.visitPath);
       if ((draft?.revision ?? '') !== this.draftRevision) throw Error('This unfinished draft changed in another editor. Your entered details are kept; reopen it to review the saved draft.');
-      if (this.visit) this.visit = await this.context.store.visits.update(this.visit.path, input, this.visitRevision ?? '', { draftRevision: this.draftRevision });
-      else this.visit = await this.context.store.visits.create(this.sourcePath, input, { operationId: this.operationId, draftRevision: this.draftRevision });
+      // Older drafts gain a durable identity before recording, even when their input is unchanged.
+      if (!draft?.operationId) {
+        this.draftRevision = await this.context.store.visits.saveDraft(this.sourcePath, input, this.visitPath, this.draftRevision, this.visitRevision);
+        draft = await this.context.store.visits.getDraftState(this.sourcePath, this.visitPath);
+      }
+      if (!draft?.operationId || draft.revision !== this.draftRevision) throw Error('This unfinished draft changed before saving. Reopen its saved details.');
+      if (draft.savedVisit) this.visit = draft.savedVisit;
+      else if (this.visit) this.visit = await this.context.store.visits.update(this.visit.path, input, this.visitRevision ?? '', { operationId: draft.operationId, draftRevision: this.draftRevision });
+      else this.visit = await this.context.store.visits.create(this.sourcePath, input, { operationId: draft.operationId, draftRevision: this.draftRevision });
       this.completed = true;
       await this.context.store.visits.clearDraft(this.sourcePath, this.visitPath, this.draftRevision);
       this.setSaving(false); this.finishAndClose(); new Notice('Visit saved');

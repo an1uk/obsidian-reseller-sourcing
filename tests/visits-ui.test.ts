@@ -4,8 +4,11 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { transformSync } from 'esbuild';
 import { catchupVisitDate } from '../src/outings/catch-up';
+import { fixture, newDraft } from './storage-fixtures';
+import { readNote, updateNoteProperty } from '../src/storage/markdown';
 
 function harness(existing = false) {
+ class TFile { extension='md'; constructor(public path:string){} }
  class Element {
   children: Element[] = []; parent?: Element; tag='div'; textContent=''; value=''; type=''; disabled=false; isConnected=true; hidden=false; inert=false; open=false;
   attributes: Record<string,string>={}; cls=''; style:any={}; readOnly=false; rows=0; min=''; step=''; id=''; placeholder=''; checked=false;
@@ -36,11 +39,11 @@ function harness(existing = false) {
  }
  const record:any={schema:1,id:'visit-one',path:'Book/Examples/Visits/2026/10/Visit one.md',sourcePath:'Book/Examples/Sources/One.md',visitDate:'2026-10-16',recordedAt:'2026-10-18T10:00:00Z',updatedAt:'2026-10-18T10:00:00Z',observations:'Original observation',finds:'Useful original find',nextTime:'Check seams',itemsPurchased:2,haulPotential:3,stockColour:'Blue',colourEvidence:'unknown',revision:'old-revision'};
  const source:any={path:record.sourcePath,name:'Source one',kind:'shop',coordinates:[1,2],properties:{rating:4.5,comments:'Current source takeaway'}};
- let draft:any,draftRevision='',draftVisitRevision:string|undefined,draftCleared=false,draftCounter=0,operations:any[]=[],released=0,create=0,update=0,draftSaves=0,clears=0,resumed=0,cancelled=0,failUpdate=false,failClear=false,waitPlaces:Promise<unknown>|undefined;
+ let draft:any,draftRevision='',draftOperationId='',draftVisitRevision:string|undefined,draftCleared=false,draftCounter=0,operations:any[]=[],released=0,create=0,update=0,draftSaves=0,clears=0,resumed=0,cancelled=0,failUpdate=false,failClear=false,waitPlaces:Promise<unknown>|undefined;
  const saves:any[]=[];const notices:string[]=[];const timers=new Map<number,()=>void>();let timer=0;
  const context:any={kind:'examples',app:{},beginEditing:()=>()=>released++,openFile:async()=>{},store:{listPlaces:async()=>{if(waitPlaces)await waitPlaces;return[source];},visits:{
-  list:async()=>existing?[structuredClone(record)]:[],get:async()=>structuredClone(record),getDraft:async()=>draft&&!draftCleared?structuredClone(draft):undefined,getDraftState:async()=>draft?{input:structuredClone(draft),revision:draftRevision,visitRevision:draftVisitRevision,cleared:draftCleared}:undefined,
-  saveDraft:async(_source:string,input:any,_path:string,expected:string,visitRevision?:string)=>{if(expected!==draftRevision)throw Error('The visit draft changed in another pane');draftSaves++;draft=structuredClone(input);draftRevision='draft-'+(++draftCounter);draftVisitRevision=visitRevision;draftCleared=false;return draftRevision;},clearDraft:async(_source:string,_path:string,expected:string)=>{clears++;if(failClear)throw Error('Draft cleanup interrupted');if(expected!==draftRevision)throw Error('The visit draft changed in another pane');if(draft){draftCleared=true;draftRevision='draft-'+(++draftCounter);}},
+  list:async()=>existing?[structuredClone(record)]:[],get:async()=>structuredClone(record),getDraft:async()=>draft&&!draftCleared?structuredClone(draft):undefined,getDraftState:async()=>draft?{input:structuredClone(draft),revision:draftRevision,visitRevision:draftVisitRevision,cleared:draftCleared,operationId:draftCleared?undefined:draftOperationId}:undefined,
+  saveDraft:async(_source:string,input:any,_path:string,expected:string,visitRevision?:string)=>{if(expected!==draftRevision)throw Error('The visit draft changed in another pane');draftSaves++;if(!draftOperationId||draftCleared)draftOperationId='draft-operation-'+(++timer);draft=structuredClone(input);draftRevision='draft-'+(++draftCounter);draftVisitRevision=visitRevision;draftCleared=false;return draftRevision;},clearDraft:async(_source:string,_path:string,expected:string)=>{clears++;if(failClear)throw Error('Draft cleanup interrupted');if(expected!==draftRevision)throw Error('The visit draft changed in another pane');if(draft){draftCleared=true;draftRevision='draft-'+(++draftCounter);}},
   create:async(path:string,input:any,options:any)=>{create++;saves.push({path,input:structuredClone(input),options});return{...structuredClone(record),...input};},
   update:async(path:string,input:any,revision:string)=>{update++;saves.push({path,input:structuredClone(input),revision});if(failUpdate||revision!==record.revision)throw Error('Visit changed before save');return{...structuredClone(record),...input};},
   pendingOperations:async()=>structuredClone(operations),resumeOperation:async()=>{resumed++;operations=[];return record;},cancelOperation:async()=>{cancelled++;operations=[];},
@@ -48,12 +51,13 @@ function harness(existing = false) {
  const module={exports:{} as Record<string,any>};
  const code=transformSync(fs.readFileSync(new URL('../src/ui/visits.ts',import.meta.url),'utf8'),{loader:'ts',format:'cjs',target:'es2022'}).code;
  const sandbox:any={module,exports:module.exports,structuredClone,Number,Date,Map,Set,Error,crypto:{randomUUID:()=> 'ui-operation-'+(++timer)},window:{setTimeout:(callback:()=>void)=>{const id=++timer;timers.set(id,callback);return id;},clearTimeout:(id:number)=>timers.delete(id)},
- require(id:string){if(id==='../outings/catch-up')return{catchupVisitDate:(record:any,stop:any)=>catchupVisitDate(record,stop,new Date('2026-10-18T12:00:00Z'))};if (id.endsWith('modal-layout')) return { markInputModal() {}, modalWindow: () => sandbox.window }; if(id==='obsidian')return{Component:class{},Modal,Setting,Notice:class{constructor(message:string){notices.push(message);}}};if(id==='../storage/markdown')return{localDate:(date?:Date)=>date?date.toISOString().slice(0,10):'2026-10-18'};if(id==='../ui')return{button:(parent:Element,text:string,run:()=>unknown)=>{const button=parent.createEl('button',{text});button.onclick=run;return button;},details:(parent:Element,title:string)=>{const value=parent.createEl('details');value.createEl('summary',{text:title});return value;},propertyText: (value: unknown, fallback = '') => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : fallback, errorText:(error:any)=>error.message??String(error),renderContextBanner:()=>{}};if(id==='./visits')return module.exports;if(['../domain','../outings/domain','../map','./outing-route','./outing-planner','../workspace/outing-preparation','./outing-shortcuts','./outing-catchup','./outing-focus','../outings/focus'].includes(id))return{};throw Error('Unexpected import '+id);}
+ require(id:string){if(id==='../outings/catch-up')return{catchupVisitDate:(record:any,stop:any)=>catchupVisitDate(record,stop,new Date('2026-10-18T12:00:00Z'))};if (id.endsWith('modal-layout')) return { markInputModal() {}, modalWindow: () => sandbox.window }; if(id==='obsidian')return{Component:class{},Modal,Setting,TFile,Notice:class{constructor(message:string){notices.push(message);}}};if(id==='../storage/markdown')return{localDate:(date?:Date)=>date?date.toISOString().slice(0,10):'2026-10-18'};if(id==='../ui')return{button:(parent:Element,text:string,run:()=>unknown)=>{const button=parent.createEl('button',{text});button.onclick=run;return button;},details:(parent:Element,title:string)=>{const value=parent.createEl('details');value.createEl('summary',{text:title});return value;},propertyText: (value: unknown, fallback = '') => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : fallback, errorText:(error:any)=>error.message??String(error),renderContextBanner:()=>{}};if(id==='./visits')return module.exports;if(['../domain','../outings/domain','../map','./outing-route','./outing-planner','../workspace/outing-preparation','./outing-shortcuts','./outing-catchup','./outing-focus','../outings/focus'].includes(id))return{};throw Error('Unexpected import '+id);}
  };vm.runInNewContext(code,sandbox);
  const api=module.exports,modal=new api.StructuredVisitModal(context,record.sourcePath,existing?record.path:undefined);
- const outingModal=(path:string,stopId:string)=>{const out={exports:{} as Record<string,any>};vm.runInNewContext(transformSync(fs.readFileSync(new URL('../src/ui/outings.ts',import.meta.url),'utf8'),{loader:'ts',format:'cjs',target:'es2022'}).code,{...sandbox,module:out,exports:out.exports});return new out.exports.OutingVisitModal(context,path,stopId);};
- return{api,modal,context,record,source,saves,notices,outingModal,element:()=>new Element(),counts:()=>({released,create,update,draftSaves,clears,resumed,cancelled}),
- setDraft:(value:any,meta:{visitRevision?:string;cleared?:boolean}={})=>{draft=structuredClone(value);draftRevision='draft-'+(++draftCounter);draftVisitRevision=meta.visitRevision;draftCleared=meta.cleared??false;},getDraft:()=>draftCleared?undefined:draft,setOperations:(value:any[])=>operations=value,failUpdate:()=>failUpdate=true,failClear:(value:boolean)=>failClear=value,deferPlaces:(pending:Promise<unknown>)=>waitPlaces=pending};
+ const outingApi=()=>{const out={exports:{} as Record<string,any>};vm.runInNewContext(transformSync(fs.readFileSync(new URL('../src/ui/outings.ts',import.meta.url),'utf8'),{loader:'ts',format:'cjs',target:'es2022'}).code,{...sandbox,module:out,exports:out.exports});return out.exports;};
+ const outingModal=(path:string,stopId:string)=>new (outingApi().OutingVisitModal)(context,path,stopId);
+ return{api,modal,context,record,source,saves,notices,file:(path:string)=>new TFile(path),outingModal,outingHome:(el:Element)=>outingApi().renderOutingsHome(context,{},el),element:()=>new Element(),counts:()=>({released,create,update,draftSaves,clears,resumed,cancelled}),
+ setDraft:(value:any,meta:{visitRevision?:string;cleared?:boolean}={})=>{draft=structuredClone(value);draftOperationId='draft-operation-'+(++timer);draftRevision='draft-'+(++draftCounter);draftVisitRevision=meta.visitRevision;draftCleared=meta.cleared??false;},getDraft:()=>draftCleared?undefined:draft,setOperations:(value:any[])=>operations=value,failUpdate:()=>failUpdate=true,failClear:(value:boolean)=>failClear=value,deferPlaces:(pending:Promise<unknown>)=>waitPlaces=pending};
 }
 function all(el:any):any[]{return[el,...el.children.flatMap(all)];}
 function field(el:any,label:string,value:string){const input=all(el).find(el=>el.attributes['aria-label']===label);assert.ok(input,label);input.value=value;input.onchange?.();return input;}
@@ -393,4 +397,119 @@ test('purchase-chip edits persist in the existing draft without recording a visi
  assert.equal(h.getDraft().itemsPurchased,undefined);assert.equal(h.counts().create,0);
  field(h.modal.contentEl,'Visit quick note','Still a draft, despite the excellent cardigan.');await h.modal.save();
  assert.equal(h.counts().create,1);assert.equal(h.saves[0].input.itemsPurchased,undefined);
+});
+
+
+async function realOutingEditor() {
+ const f=fixture();await f.store.setup();const area=await f.store.ensureLocality('Exampletown');
+ const source=await f.store.saveCapture(newDraft('editor-source'),area.path,'Source');
+ let outing=await f.store.outings.create({name:'Concurrent outing',groups:[{id:'group',parkingPath:'',stops:[{id:'stop',sourcePath:source.path,status:'pending'}]}]});
+ outing=await f.store.outings.start(outing.path,outing.revision);
+ const h=harness();h.context.kind='real';h.context.store=f.store;h.context.app=f.app;
+ const modal=h.outingModal(outing.path,'stop');await modal.load();
+ return {...f,h,modal,source,outing};
+}
+
+test('retry and close after an outing draft conflict keep the reviewed revision and newer draft',async()=>{
+ const f=await realOutingEditor();field(f.modal.contentEl,'Outing visit quick note','Pane A unsaved text');
+ const current=await f.store.outings.saveDraft(f.outing.path,'stop',{...blankInput(),observations:'Pane B newer text',itemsPurchased:6},f.outing.revision);
+ await f.modal.saveVisit();await f.modal.saveVisit();
+ assert.match(f.modal.status.textContent,/changed/);assert.equal(f.modal.record.revision,f.outing.revision);
+ assert.equal((await f.store.outings.get(f.outing.path)).revision,current.revision);
+ assert.equal((await f.store.visits.list(f.source.path)).length,0);
+ const fieldA=all(f.modal.contentEl).find(el=>el.attributes['aria-label']==='Outing visit quick note');
+ assert.equal(fieldA.value,'Pane A unsaved text');assert.equal(fieldA.disabled,false);
+ f.modal.close();
+ // Await the actual failed draft write before pressing the re-enabled close action.
+ await f.modal.queue.catch(()=>undefined);await settle();assert.equal(f.modal.closed,false);assert.equal(f.modal.saving,false);
+ await all(f.modal.contentEl).find(el=>el.textContent==='Close without saving this form').onclick();await settle();
+ assert.equal(f.modal.closed,true);assert.equal((await f.store.outings.get(f.outing.path)).revision,current.revision);
+});
+
+test('explicit conflict reload restores saved details and permits a reviewed save',async()=>{
+ const f=await realOutingEditor();field(f.modal.contentEl,'Outing visit quick note','Pane A unsaved text');
+ await f.store.outings.saveDraft(f.outing.path,'stop',{...blankInput(),observations:'Pane B newer text',itemsPurchased:6},f.outing.revision);
+ await f.modal.saveVisit();
+ const reload=all(f.modal.contentEl).find(el=>el.textContent==='Reload saved details');assert.ok(reload);
+ const listPlaces=f.store.listPlaces.bind(f.store);f.store.listPlaces=async()=>{throw Error('Temporary read failure');};
+ await reload.onclick();assert.match(f.modal.status.textContent,/Temporary read failure/);
+ assert.equal(all(f.modal.contentEl).find(el=>el.attributes['aria-label']==='Outing visit quick note').value,'Pane A unsaved text');
+ f.store.listPlaces=listPlaces;await reload.onclick();
+ assert.equal(all(f.modal.contentEl).find(el=>el.attributes['aria-label']==='Outing visit quick note').value,'Pane B newer text');
+ assert.equal(all(f.modal.contentEl).find(el=>el.attributes['aria-label']==='Items purchased').value,'6');
+ await f.modal.saveVisit();assert.equal(f.modal.closed,true);
+ const visits=await f.store.visits.list(f.source.path);assert.equal(visits.length,1);assert.equal(visits[0]!.observations,'Pane B newer text');assert.equal(visits[0]!.itemsPurchased,6);
+});
+
+test('an outing visit interruption keeps its explicit recovery action and records only once',async()=>{
+ const f=await realOutingEditor();field(f.modal.contentEl,'Outing visit quick note','Retained for recovery');
+ const create=f.vault.create.bind(f.vault);let fail=true;
+ f.vault.create=async(path,text)=>{if(fail&&path.includes('/Visits/')){fail=false;throw Error('Interrupted visit write');}return create(path,text);};
+ await f.modal.saveVisit();assert.ok((await f.store.outings.get(f.outing.path)).operation);
+ const retry=all(f.modal.contentEl).find(el=>el.textContent==='Retry completion');assert.ok(retry);await retry.onclick();
+ assert.equal(f.modal.closed,true);assert.equal((await f.store.visits.list(f.source.path)).length,1);
+ assert.equal((await f.store.outings.get(f.outing.path)).operation,undefined);
+});
+
+test('an uncertain completed outing visit retries its original identity without a duplicate',async()=>{
+ const f=await realOutingEditor();field(f.modal.contentEl,'Outing visit quick note','Saved once');
+ const process=f.vault.process.bind(f.vault);let fail=true;
+ f.vault.process=async(file,callback)=>{const result=await process(file,callback);if(fail&&file.path===f.outing.path){const latest=await f.store.outings.get(f.outing.path);if(latest.groups[0]!.stops[0]!.status==='visited'){fail=false;throw Error('Completion acknowledgement lost');}}return result;};
+ await f.modal.saveVisit();assert.equal(f.modal.closed,false);assert.equal((await f.store.visits.list(f.source.path)).length,1);
+ await f.modal.saveVisit();assert.equal(f.modal.closed,true);assert.equal((await f.store.visits.list(f.source.path)).length,1);
+});
+
+
+test('another pane visit operation never replaces a conflicting outing form',async()=>{
+ const f=await realOutingEditor();field(f.modal.contentEl,'Outing visit quick note','Pane A unsaved text');
+ const otherInput={...blankInput(),observations:'Pane B durable operation',itemsPurchased:4};
+ const draft=await f.store.outings.saveDraft(f.outing.path,'stop',otherInput,f.outing.revision);
+ const create=f.vault.create.bind(f.vault);f.vault.create=async(path,text)=>{if(path.includes('/Visits/'))throw Error('Interrupted other pane');return create(path,text);};
+ await assert.rejects(f.store.outings.recordVisit(f.outing.path,'stop',otherInput,{revision:draft.revision,operationId:draft.draft!.operationId}),/Interrupted other pane/);
+ const pending=await f.store.outings.get(f.outing.path);assert.ok(pending.operation);
+ await f.modal.saveVisit();
+ assert.equal(all(f.modal.contentEl).find(el=>el.attributes['aria-label']==='Outing visit quick note').value,'Pane A unsaved text');
+ assert.equal(all(f.modal.contentEl).some(el=>el.textContent==='Retry completion'),false);
+ all(f.modal.contentEl).find(el=>el.textContent==='Close without saving this form').onclick();await settle();
+ assert.equal((await f.store.outings.get(f.outing.path)).revision,pending.revision);
+});
+
+test('outing browsing shows valid outings beside targeted malformed-note diagnostics',async()=>{
+ const h=harness(),el=h.element(),opened:string[]=[];
+ h.context.root='Book';h.context.openFile=async()=>{throw Error('Review must open Markdown outside the workspace router');};
+ h.context.app={vault:{getAbstractFileByPath:(path:string)=>h.file(path)},workspace:{getLeaf:(kind:string)=>{assert.equal(kind,'tab');return{openFile:async(file:any,options:any)=>{assert.equal(options.state.mode,'source');opened.push(file.path);}};}}};
+ h.context.store.outings={inspect:async()=>({records:[{name:'Valid outing',path:'Book/Outings/Good.md',status:'planned',groups:[],revision:'reviewed'}],problems:[{path:'Book/Outings/Broken.md',message:'Invalid outing data'}]}),list:async()=>{throw Error('Strict list must not be used for browsing');}};
+ await h.outingHome(el);
+ const text=all(el).map(node=>node.textContent).join('\n');assert.match(text,/Valid outing/);assert.match(text,/Book\/Outings\/Broken.md: Invalid outing data/);
+ await all(el).find(node=>node.textContent==='Open note to review').onclick();assert.deepEqual(opened,['Book/Outings/Broken.md']);
+});
+
+for (const linkedEdit of [false, true]) test(`cold reopening after ${linkedEdit ? 'linked visit edit' : 'standalone creation'} cleanup failure only cleans the draft`, async () => {
+ const f=fixture();await f.store.setup();const source=await f.store.saveCapture(newDraft('cleanup'),{town:'Exampletown',locality:''},'Source');
+ let visitPath:string|undefined;
+ if(linkedEdit){
+  const outing=await f.store.outings.create({name:'A small outing',groups:[{id:'group',parkingPath:'',stops:[{id:'stop',sourcePath:source.path,status:'pending'}]}]});
+  const recorded=await f.store.outings.recordVisit(outing.path,'stop',{...blankInput(),itemsPurchased:1});visitPath=recorded.groups[0]!.stops[0]!.visitPath;
+ }
+ const h=harness();h.context.store=f.store;h.context.app=f.app;h.context.kind='real';
+ const first=new h.api.StructuredVisitModal(h.context,source.path,visitPath);await first.load();
+ field(first.contentEl,'Visit quick note','One actual visit');field(first.contentEl,'Items purchased','3');
+ const clear=f.store.visits.clearDraft.bind(f.store.visits);let fail=true;
+ f.store.visits.clearDraft=async(...args)=>{if(fail){fail=false;throw Error('Draft cleanup unavailable');}return clear(...args);};
+ await first.save();assert.equal(first.completed,true);assert.match(first.status.textContent,/cleanup/);assert.equal((await f.store.visits.list(source.path)).length,1);first.close();
+ const saved=(await f.store.visits.list(source.path))[0]!;
+ const vf=f.vault.getFiles().find(file=>file.path===saved.path)!;
+ await f.vault.process(vf,raw=>updateNoteProperty(raw,'items_purchased',7)+'Personal correction after saving.\n');
+ await f.store.updateAssessment(source.path,{rating:1.5,comments:'Later source correction'});
+ const sourceBefore=await f.vault.read(source),visitBefore=await f.vault.read(vf);
+ const second=new h.api.StructuredVisitModal(h.context,source.path,visitPath);await second.load();
+ assert.equal(second.completed,true);assert.match(all(second.contentEl).map(el=>el.textContent).join(' '),/already recorded/);
+ assert.equal(all(second.contentEl).some(el=>el.attributes['aria-label']==='Visit quick note'),false);
+ // Merely closing this cleanup screen must not apply any old input or lose the receipt.
+ second.close();assert.equal(await f.vault.read(vf),visitBefore);assert.equal(await f.vault.read(source),sourceBefore);
+ const third=new h.api.StructuredVisitModal(h.context,source.path,visitPath);await third.load();await third.save();
+ assert.equal(third.closed,true);assert.equal(await f.vault.read(vf),visitBefore);assert.equal(await f.vault.read(source),sourceBefore);
+ assert.equal((await f.store.visits.list(source.path)).length,1);assert.equal((await f.store.visits.getDraftState(source.path,visitPath))?.cleared,true);
+ assert.equal(readNote(visitBefore).properties.items_purchased,7);
+ if(linkedEdit){const current=await f.store.visits.get(saved.path);assert.equal(current.outingId,saved.outingId);assert.equal(current.stopId,saved.stopId);}
 });

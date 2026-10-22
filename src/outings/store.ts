@@ -8,7 +8,7 @@ import type { App, TFile } from 'obsidian';
 import type { PlaceRecord } from '../types';
 import { safeFileName } from '../domain';
 import { NotebookPaths } from '../storage/paths';
-import { appendVisit, hashText, linkPath, readNote, updateNoteProperty, wiki, writeNote } from '../storage/markdown';
+import { appendVisit, hashText, linkPath, localDate, readNote, updateNoteProperty, wiki, writeNote } from '../storage/markdown';
 import type { OutingGroup, OutingPlanInput, OutingRecord, OutingStop, OutingStopStatus, OutingVisitInput, OutingVisitOptions, OutingPlanningOptions, OutingOptimisationPreview, PlanningHours, OutingFocusState } from './types';
 
 import { buildOutingOptimisationPreview, resolvePlanningAnchor, validatePlanningOptions } from './planning';
@@ -16,6 +16,18 @@ import { extractSourceContext } from './domain';
 import { hasControlCharacters, isUnknownArray } from '../domain/guards';
 import { notebookFiles } from '../storage/files';
 
+export interface OutingInspection {
+  records: OutingRecord[];
+  problems: { path: string; message: string }[];
+}
+interface OutingProblem {
+  path: string;
+  message: string;
+  id?: string;
+  preparationId?: string;
+  status?: OutingRecord['status'];
+  exampleBackground?: boolean;
+}
 interface OutingHost {
   visits: VisitStore;
   app: App;
@@ -57,8 +69,8 @@ export class OutingStore {
     if (!fileLike(file) || file.extension !== 'md') throw new Error('This outing note no longer exists.');
     return file;
   }
-  private async load(path: string): Promise<{ record: OutingRecord; raw: string }> {
-    const raw = await this.host.app.vault.read(this.file(path));
+  private async load(path: string, suppliedRaw?: string): Promise<{ record: OutingRecord; raw: string }> {
+    const file = this.file(path), raw = suppliedRaw ?? await this.host.app.vault.read(file);
     const properties = readNote(raw).properties, data = properties.outing;
     if (!this.host.examples && properties.sourcing_example === true) throw new Error('Fictional outings belong in Examples.');
     if (!Array.isArray(properties.tags) || !properties.tags.includes('sourcing-outing') || !object(data) || data.schema !== 1 ||
@@ -91,13 +103,41 @@ export class OutingStore {
     return { record, raw };
   }
   async get(path: string): Promise<OutingRecord> { return (await this.load(path)).record; }
-  async list(): Promise<OutingRecord[]> {
-    const records: OutingRecord[] = [];
+  private async scan(): Promise<{ records: OutingRecord[]; problems: OutingProblem[] }> {
+    const records: OutingRecord[] = [], problems: OutingProblem[] = [];
     for (const file of notebookFiles(this.host.app.vault, this.host.root() + '/Outings').filter(f => f.extension === 'md')) {
-      const raw = await this.host.app.vault.read(file), properties = readNote(raw).properties;
-      if ((this.host.examples || properties.sourcing_example !== true) && Array.isArray(properties.tags) && properties.tags.includes('sourcing-outing')) records.push((await this.load(file.path)).record);
+      let header: Record<string, unknown> | undefined;
+      try {
+        const raw = await this.host.app.vault.read(file), properties = readNote(raw).properties;
+        if (!this.host.examples && properties.sourcing_example === true || !Array.isArray(properties.tags) || !properties.tags.includes('sourcing-outing')) continue;
+        if (object(properties.outing)) header = properties.outing;
+        records.push((await this.load(file.path, raw)).record);
+      } catch (error) {
+        problems.push({
+          path: file.path, message: error instanceof Error ? error.message : 'This outing could not be read. Preserve its note for review.',
+          ...(header && text(header.id) ? { id: text(header.id) } : {}),
+          ...(header && text(header.preparationId) ? { preparationId: text(header.preparationId) } : {}),
+          ...(header?.status === 'planned' || header?.status === 'active' || header?.status === 'finished' ? { status: header.status } : {}),
+          ...(header?.exampleBackground === true ? { exampleBackground: true } : {}),
+        });
+      }
     }
-    return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.name.localeCompare(b.name));
+    records.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.name.localeCompare(b.name));
+    return { records, problems };
+  }
+  /** Browsing may show valid outings alongside exact notes needing review. */
+  async inspect(): Promise<OutingInspection> {
+    const { records, problems } = await this.scan();
+    return { records, problems: problems.map(({ path, message }) => ({ path, message })) };
+  }
+  private reviewProblem(problem: OutingProblem): Error {
+    return Error('Review the outing at "' + problem.path + '" before continuing: ' + problem.message);
+  }
+  /** Recovery and moves require a complete inventory, rather than a partial browsing result. */
+  async list(): Promise<OutingRecord[]> {
+    const { records, problems } = await this.scan();
+    if (problems[0]) throw this.reviewProblem(problems[0]);
+    return records;
   }
   private encode(record: OutingRecord): Record<string, unknown> {
     const { path: _path, revision: _revision, ...data } = structuredClone(record);
@@ -222,11 +262,14 @@ export class OutingStore {
       const name = input.name.trim(); if (!name) throw new Error('Name the outing.');
       if (preparationId && !/^[a-zA-Z0-9-]{8,100}$/.test(preparationId)) throw Error('Invalid outing preparation identity.');
       if (preparationId) {
-        const existing = (await this.list()).filter(r => r.id === preparationId);
+        const { records, problems } = await this.scan();
+        const uncertain = problems.find(problem => !problem.id || problem.id === preparationId || problem.preparationId === preparationId);
+        if (uncertain) throw this.reviewProblem(uncertain);
+        const existing = records.filter(r => r.id === preparationId);
         if (existing.length > 1) throw Error('Several outings share this preparation identity. Review them before retrying.');
         if (existing[0]) { if (existing[0].preparationId !== preparationId) throw Error('Preparation identity is already in use. Review the saved outing.'); return existing[0]; }
       }
-      const groups = await this.groups(input.groups), date = input.planning?.date ?? new Date().toISOString().slice(0, 10);
+      const groups = await this.groups(input.groups), date = input.planning?.date ?? localDate();
       const path = new NotebookPaths(this.host.root()).outing(safeFileName(name), date);
       if (this.host.app.vault.getAbstractFileByPath(path)) throw new Error('An outing already uses that filename. Choose another name.');
       const record: OutingRecord = { id: preparationId ?? crypto.randomUUID(), ...(preparationId ? { preparationId } : {}), path, name, status: 'planned', groups, createdAt: timestamp(), revision: '' };
@@ -242,7 +285,7 @@ export class OutingStore {
     if (!input.name.trim()) throw Error('Name the outing.');
     const groups = await this.groups(input.groups, previous);
     if (input.planning) await this.checkedPlanning(input.planning, groups);
-    if (!previous && this.host.app.vault.getAbstractFileByPath(new NotebookPaths(this.host.root()).outing(safeFileName(input.name), input.planning?.date ?? new Date().toISOString().slice(0, 10)))) throw Error('An outing already uses that name. Change the name before saving.');
+    if (!previous && this.host.app.vault.getAbstractFileByPath(new NotebookPaths(this.host.root()).outing(safeFileName(input.name), input.planning?.date ?? localDate()))) throw Error('An outing already uses that name. Change the name before saving.');
   }
   async updatePlan(path: string, input: OutingPlanInput, revision?: string, preparationId?: string): Promise<OutingRecord> {
     return this.host.exclusive(async () => {
@@ -320,7 +363,10 @@ export class OutingStore {
   async start(path: string, revision?: string): Promise<OutingRecord> {
     return this.host.exclusive(async () => {
       const { record, raw } = await this.load(path); this.check(record, revision);
-      if ((await this.list()).some(o => o.path !== path && o.status === 'active' && !(this.host.examples && o.exampleBackground))) throw new Error('Finish the current outing before starting another.');
+      const { records, problems } = await this.scan();
+      const uncertain = problems.find(problem => problem.path !== path && (problem.status === undefined || problem.status === 'active' && !(this.host.examples && problem.exampleBackground)));
+      if (uncertain) throw this.reviewProblem(uncertain);
+      if (records.some(o => o.path !== path && o.status === 'active' && !(this.host.examples && o.exampleBackground))) throw new Error('Finish the current outing before starting another.');
       record.status = 'active'; record.startedAt ??= timestamp(); delete record.finishedAt; delete record.exampleBackground;
       return this.persist(record, raw);
     });

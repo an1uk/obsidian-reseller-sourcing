@@ -14,7 +14,10 @@ export class PlacePreparationModal extends PreparationModal<PlacePreparation> {
   constructor(context: NotebookContext, capture: CaptureDraft, linkedSource?: string, draftId?: string) {
     super(context, 'place', { capture: { ...capture, sourceType: capture.sourceType || context.settings.defaultSourceType }, area: { town: '', locality: '' }, step: 1, filename: '', ...(linkedSource ? { linkedSource } : {}) }, draftId);
   }
-  protected meaningful() { const d = this.draft.data; return !!(d.capture.name.trim() || d.capture.address || d.capture.url || d.area.town || d.capture.coordinates); }
+  protected meaningful() {
+    const d = this.draft.data, c = d.capture;
+    return !!(c.name.trim() || c.address || c.url || d.area.town || d.area.locality || c.coordinates || d.coordinatesText || c.website || c.telephone || d.makeDefaultSourceType || c.sourceType && c.sourceType !== this.context.settings.defaultSourceType);
+  }
   async renderStep() {
     const d = this.draft.data, c = d.capture, el = this.contentEl;
     this.titleEl.setText(c.kind === 'parking' ? 'Add parking' : 'Add a place');

@@ -20,6 +20,7 @@ import { SourcingSettings } from './ui/settings';
 import { showSelectableText } from './platform/clipboard';
 import { handleNotebookNavigationClick } from './platform/notebook-links';
 import { NewOutingModal, renderOuting, renderOutingsHome } from './ui/outings';
+import { resumeCurrentOuting } from './ui/outing-shortcuts';
 import { CaptureRefreshModal } from './ui/capture-refresh';
 import type { NotebookContext, NotebookUiHost } from './notebook-context';
 import { ExamplesManager } from './examples/state';
@@ -133,7 +134,7 @@ export default class CharitySourcingPlugin extends Plugin implements NotebookCon
     } });
     this.addCommand({ id: 'record-visit', name: 'Record a visit', callback: () => void this.inCurrentContext(c => chooseVisitSource(c)) });
     this.addCommand({ id: 'new-outing', name: 'New outing', callback: () => void this.inCurrentContext(c=>c.newOuting()) });
-    this.addCommand({ id: 'resume-outing', name: 'Resume outing', callback: () => void this.inCurrentContext(async c=>{ const active=(await c.store.outings.list()).find(o=>o.status==='active'); await c.openFile(active?.path??c.root+'/Outings.md'); }) });
+    this.addCommand({ id: 'resume-outing', name: 'Resume outing', callback: () => void this.inCurrentContext(c => resumeCurrentOuting(c)) });
     this.addCommand({ id: 'open-outings', name: 'Browse outings', callback: () => void this.inCurrentContext(c=>c.openFile(c.root+'/Outings.md')) });
     this.addCommand({ id: 'new-locality', name: 'New locality', callback: () => void this.inCurrentContext(c=>c.newLocality()) });
     this.addCommand({ id: 'move-notebook', name: 'Move notebook', callback: () => void this.inCurrentContext(c=>new NotebookMoveModal(c).open()) });
@@ -212,9 +213,7 @@ export default class CharitySourcingPlugin extends Plugin implements NotebookCon
   }
   async resumeOuting(): Promise<void> {
     try {
-      const outings = await this.store.outings.list();
-      const active = outings.find(outing => outing.status === 'active');
-      await this.openFile(active?.path ?? this.store.root + '/Outings.md');
+      await resumeCurrentOuting(this);
     } catch (error) { new Notice(errorText(error)); }
   }
   newLocality(): void {

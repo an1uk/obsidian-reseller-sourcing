@@ -1,5 +1,5 @@
 import type { CaptureDraft, PlaceRecord } from '../types';
-import { canonicalPlaceIdentity, isGoogleMapsUrl, telephoneUrl, validateCoordinates, websiteUrl } from '../domain';
+import { canonicalPlaceIdentity, matchesSavedPlaceIdentity, isGoogleMapsUrl, telephoneUrl, validateCoordinates, websiteUrl } from '../domain';
 import { validGoogleHours, validSnapshotDate, readGoogleHours, readGoogleTopics } from '../domain/google-details';
 
 export const CAPTURE_REFRESH_FIELDS = ['google_name', 'google_maps_url', 'address', 'website', 'telephone', 'google_hours', 'google_reviews', 'google_review_topics', 'coordinates'] as const;
@@ -38,7 +38,7 @@ export function captureRefreshReceipts(properties: Record<string, unknown>): Cap
       typeof raw.appliedAt !== 'string' || !Number.isFinite(Date.parse(raw.appliedAt)) || new Date(raw.appliedAt).toISOString() !== raw.appliedAt ||
       !Array.isArray(raw.fields) || raw.fields.some((key: unknown) => !CAPTURE_REFRESH_FIELDS.some(field => field === key)) ||
       new Set(raw.fields).size !== raw.fields.length || typeof raw.captureUrl !== 'string' || !validRefreshListing(raw.captureUrl) ||
-      raw.captureIdentity !== canonicalPlaceIdentity(raw.captureUrl) || typeof raw.targetSourceCaptureId !== 'string' ||
+      !matchesSavedPlaceIdentity(raw.captureUrl, raw.captureIdentity) || typeof raw.targetSourceCaptureId !== 'string' ||
       raw.targetSourceCaptureId !== sourceCaptureId) return false;
     return true;
   });

@@ -214,3 +214,56 @@ test('new plans omit the optional return while an explicit saved round trip rema
   assert.ok(round.current.finishAt > oneWay.current.finishAt);
   assert.deepEqual(defaultPlanningOptions().end, { kind: 'last' });
 });
+
+test('continuous captured opening periods allow visits across midnight without waiting for a new day', () => {
+  const a = source('All night'), p = parking('Car'), g = group('g', [a], p);
+  const opts = options({ departureTime: '23:40' });
+  for (const next of ['Open 24 hours', '00:00-17:00']) {
+    const result = build([g], [p, a], opts, { [a.path]: { hours: ['Monday, Open 24 hours', 'Tuesday, ' + next], hoursChecked: '2026-10-18' } });
+    assert.equal(result.current.timeline[0]!.arrival, Date.parse('2026-10-19T23:45Z'));
+    assert.equal(result.current.timeline[0]!.departure, Date.parse('2026-10-20T00:05Z'));
+    assert.equal(result.current.timeline[0]!.hoursStatus, 'open', next);
+    assert.equal(result.current.openingConflicts, 0);
+    assert.equal(result.current.waitingMinutes, 0);
+  }
+  for (const next of ['Closed', '00:10-17:00', 'By appointment']) {
+    const result = build([g], [p, a], opts, { [a.path]: { hours: ['Monday, Open 24 hours', 'Tuesday, ' + next], hoursChecked: '2026-10-18' } });
+    assert.notEqual(result.current.timeline[0]!.hoursStatus, 'open', next);
+    assert.equal(result.current.waitingMinutes, 0);
+  }
+  const closedToday = build([g], [p, a], opts, { [a.path]: { hours: ['Monday, Closed', 'Tuesday, Open 24 hours'], hoursChecked: '' } });
+  assert.equal(closedToday.current.openingConflicts, 1);
+  assert.equal(closedToday.current.waitingMinutes, 0);
+});
+
+test('adjacent overnight periods merge while date-specific overrides remain independent of weekly hours', () => {
+  const a = source('Night stock'), g = group('g', [a]), id = g.stops[0]!.id;
+  const hours = { [a.path]: { hours: ['Sunday, 22:00-02:00', 'Monday, 02:00-05:00'], hoursChecked: '' } };
+  const joined = build([g], [a], options({ departureTime: '01:50' }), hours);
+  assert.equal(joined.current.timeline[0]!.hoursStatus, 'open');
+  assert.equal(joined.current.waitingMinutes, 0);
+  const weeklyHours = { [a.path]: weekly('Open 24 hours') };
+  for (const override of [
+    { closed: true, intervals: [] },
+    { closed: false, intervals: [{ open: '00:00', close: '24:00' }] },
+  ]) {
+    const result = build([g], [a], options({ departureTime: '23:50', stopOverrides: { [id]: { hours: override } } }), weeklyHours);
+    assert.equal(result.current.openingConflicts, 1);
+    assert.equal(result.current.timeline[0]!.hoursChecked, 'Outing override');
+  }
+  const explicitOvernight = build([g], [a], options({ departureTime: '23:50', stopOverrides: {
+    [id]: { hours: { closed: false, intervals: [{ open: '22:00', close: '02:00' }] } },
+  } }), { [a.path]: weekly('Closed') });
+  assert.equal(explicitOvernight.current.timeline[0]!.hoursStatus, 'open');
+});
+
+test('continuous days use timezone instants at year and daylight-saving boundaries', () => {
+  const a = source('All night'), g = group('g', [a]);
+  for (const date of ['2026-12-31', '2026-03-28', '2026-10-24']) {
+    const result = build([g], [a], options({ date, departureTime: '23:50', timeZone: 'Europe/London', defaultVisitMinutes: 180 }), { [a.path]: weekly('Open 24 hours') });
+    assert.deepEqual(result.blockers, []);
+    assert.equal(result.current.timeline[0]!.hoursStatus, 'open', date);
+    assert.equal(result.current.totalMinutes, 180);
+    assert.equal(result.current.waitingMinutes, 0);
+  }
+});

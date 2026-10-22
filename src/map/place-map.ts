@@ -22,6 +22,8 @@ export interface PlaceMapOptions {
   includeClosed?: boolean;
   onPick?: (coordinates: Coordinates) => void;
   selectionLabel?: string;
+  /** Explicit, unsaved capture pin; saved records always resolve through the notebook. */
+  unsavedPath?: string;
 }
 
 /** Inline map: shares upstream tile styles and controls, with reviewed note writes. */
@@ -43,6 +45,8 @@ export class PlaceMap extends Component {
   private activeTileSet: string | undefined;
   private generation = 0;
   private touchPopup: MobileMapPopup;
+  private markerGeneration = 0;
+  private navigationRecords?: Promise<PlaceRecord[]>;
 
   constructor(container: HTMLElement, private host: MapHost, private options: PlaceMapOptions) {
     super();
@@ -208,6 +212,7 @@ export class PlaceMap extends Component {
   }
 
   setRecords(records: PlaceRecord[]): void {
+    this.markerGeneration++; this.navigationRecords = undefined;
     this.records = records.filter(p => hostOwnsPath(this.host,p.path));
     if (!this.map || this.disposed) return;
     this.renderMarkers();
@@ -229,6 +234,7 @@ export class PlaceMap extends Component {
   }
 
   private renderMarkers(): void {
+    this.markerGeneration++; this.navigationRecords = undefined;
     this.markers.forEach(marker => marker.remove());
     this.popups.forEach(popup => popup.remove());
     this.touchPopup.close(false);
@@ -277,10 +283,35 @@ export class PlaceMap extends Component {
       const value = place.properties[key];
       if ((typeof value === 'string' && value !== '') || typeof value === 'number' || typeof value === 'boolean') content.createEl('p', {text:`${label}: ${String(value)}`});
     }
-    appendNavigation(content,place,this.records,this.host);
+    const navigation = content.createDiv();
+    if (this.options.onPick && this.options.unsavedPath === place.path) appendNavigation(navigation, place, [place], this.host);
+    else void this.loadPopupNavigation(navigation, place.path, this.markerGeneration);
     const copy = content.createEl('button',{text:'Copy coordinates'});
     copy.addEventListener('click',() => { if (validCoordinates(place.coordinates)) void this.copy(place.coordinates); });
     return content;
+  }
+  private async loadPopupNavigation(container: HTMLElement, path: string, generation: number): Promise<void> {
+    const current = () => !this.disposed && generation === this.markerGeneration;
+    container.setText('Loading directions...');
+    const pending = this.navigationRecords ??= Promise.resolve().then(async () => {
+      await this.host.assertCurrent?.();
+      if (!this.host.getPlaces) throw Error('Place lookup is unavailable.');
+      return (await this.host.getPlaces()).filter(place => hostOwnsPath(this.host, place.path));
+    });
+    try {
+      const records = await pending;
+      if (!current()) return;
+      const place = records.find(record => record.path === path);
+      if (!place) { container.setText('This place is no longer available.'); return; }
+      container.empty();
+      appendNavigation(container, place, records, this.host);
+    } catch {
+      if (this.navigationRecords === pending) this.navigationRecords = undefined;
+      if (!current()) return;
+      container.setText('Directions unavailable. ');
+      const retry = container.createEl('button', {text:'Retry directions'});
+      retry.addEventListener('click', () => { if (current()) void this.loadPopupNavigation(container, path, generation); }, {once:true});
+    }
   }
   private async copy(coordinates: Coordinates): Promise<void> {
     await copyTextOrShow(this.host.app, coordinates.join(', '), 'Coordinates');

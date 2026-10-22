@@ -33,9 +33,20 @@ async function editing<T>(plugin: NotebookContext, run: () => Promise<T>): Promi
   try { return await run(); } finally { finish(); }
 }
 export async function renderOutingsHome(plugin: NotebookContext, owner: Component, el: HTMLElement, isCurrent: () => boolean = () => true): Promise<void> {
-  const outings = await plugin.store.outings.list(); if (!isCurrent()) return;
+  const { records: outings, problems } = await plugin.store.outings.inspect(); if (!isCurrent()) return;
   renderContextBanner(plugin, el); el.addClass('charity-outing');
   const actions = el.createDiv('charity-actions'); button(actions, 'New outing', () => new NewOutingModal(plugin).open(), true); button(actions, 'I have about an hour', () => openShortTripPreparation(plugin));
+  for (const problem of problems) {
+    const row = el.createDiv('charity-empty-state');
+    row.createEl('p', { text: problem.path + ': ' + problem.message, cls: 'charity-error' });
+    button(row, 'Open note to review', async () => {
+      if (!isCurrent()) return;
+      if (!problem.path.startsWith(plugin.root + '/Outings/') || problem.path.includes('\\') || problem.path.split('/').some(part => part === '..' || part === '.')) throw Error('Choose an outing in this notebook.');
+      const file = plugin.app.vault.getAbstractFileByPath(problem.path);
+      if (!(file instanceof TFile) || file.extension !== 'md') throw Error('This outing note no longer exists.');
+      await plugin.app.workspace.getLeaf('tab').openFile(file, { state: { mode: 'source' } });
+    });
+  }
   if (!outings.length) { el.createEl('p', { text: 'Create an outing from your shortlist or choose sources by area. Progress belongs to the outing; your shop shortlist is independent.', cls: 'charity-empty-state' }); return; }
   for (const state of ['active', 'planned', 'finished'] as const) {
     const values = outings.filter(record => record.status === state); if (!values.length) continue;
@@ -363,6 +374,8 @@ export class OutingVisitModal extends Modal {
   private fields?: VisitEditor;
   private visitRevision?: string;
   private confirmSkipped = false;
+  private attemptedOperationId?: string;
+  private conflictEl?: HTMLElement;
   private background = () => { if (this.contentEl.ownerDocument?.hidden) void this.flush().catch(error => this.draftFailure(error)); };
   constructor(private plugin: NotebookContext, private path: string, private stopId: string, private afterSave?: () => void | Promise<void>) { super(plugin.app); }
   onOpen(): void { markInputModal(this);
@@ -372,20 +385,21 @@ export class OutingVisitModal extends Modal {
     void this.load().catch(error => this.contentEl.createEl('p', { text: errorText(error), cls: 'charity-error' }));
   }
   private async load(): Promise<void> {
-    this.fields?.dispose?.();
-    this.record = await this.plugin.store.outings.get(this.path); if (this.closed) return;
-    if (this.record.operation) { this.showRecovery(); return; }
-    if (this.record.draft && this.record.draft.stopId !== this.stopId) throw Error('Resume or discard the existing visit draft before starting another.');
-    const stop = stopsOf(this.record).find(stop => stop.id === this.stopId); if (!stop) throw Error('This outing stop is no longer available.');
-    const suggestion = visitDateSuggestion(this.record, stop);
+    const record = await this.plugin.store.outings.get(this.path); if (this.closed) return;
+    if (record.operation) { this.record = record; this.showRecovery(); return; }
+    if (record.draft && record.draft.stopId !== this.stopId) throw Error('Resume or discard the existing visit draft before starting another.');
+    const stop = stopsOf(record).find(stop => stop.id === this.stopId); if (!stop) throw Error('This outing stop is no longer available.');
+    const suggestion = visitDateSuggestion(record, stop);
     const [places, visits, linked] = await Promise.all([this.plugin.store.listPlaces(), this.plugin.store.visits.list(stop.sourcePath), stop.visitPath ? this.plugin.store.visits.get(stop.visitPath) : Promise.resolve(undefined)]); if (this.closed) return;
-    if (linked && (linked.id !== stop.visitId || linked.sourcePath !== stop.sourcePath || linked.outingId !== this.record.id || linked.stopId !== stop.id)) throw Error('This stop points to another visit. Review its links before editing.');
-    if (this.record.draft) { this.input = clone(this.record.draft.input); this.visitRevision = this.record.draft.visitRevision; }
-    else if (linked) { this.input = visitInputFromRecord(linked); this.visitRevision = linked.revision; }
-    else this.input.visitDate = suggestion.date;
-    this.persisted = this.record.draft ? JSON.stringify(this.input) : '';
+    if (linked && (linked.id !== stop.visitId || linked.sourcePath !== stop.sourcePath || linked.outingId !== record.id || linked.stopId !== stop.id)) throw Error('This stop points to another visit. Review its links before editing.');
+    // Replace a form only after every read and identity check succeeds.
+    this.fields?.dispose?.(); this.record = record;
+    this.input = record.draft ? clone(record.draft.input) : linked ? visitInputFromRecord(linked) : { observations: '', finds: '', nextTime: '', visitDate: suggestion.date, updateLastVisited: false };
+    this.visitRevision = record.draft ? record.draft.visitRevision : linked?.revision;
+    this.persisted = record.draft ? JSON.stringify(this.input) : '';
+    this.changed = false; this.queue = Promise.resolve(); this.attemptedOperationId = undefined; this.conflictEl = undefined; this.confirmSkipped = false;
     const source = places.find(place => place.path === stop.sourcePath);
-    const el = this.contentEl; renderContextBanner(this.plugin, el);
+    const el = this.contentEl; el.empty(); renderContextBanner(this.plugin, el);
     if (linked && this.record.draft && !this.visitRevision) {
       el.createEl('p', { text: 'This older draft has no saved visit comparison. Its input is kept below. Review the saved visit, then explicitly discard this draft and reopen the editor before saving.', cls: 'charity-error' });
       el.createEl('p', { text: 'Saved draft actual date: ' + this.input.visitDate + ' · ' + visitSummary({ ...linked, ...this.input }), cls: 'charity-hint' });
@@ -438,20 +452,40 @@ export class OutingVisitModal extends Modal {
     this.setSaving(true);
     try {
       await this.flush(); this.status.setText('Saving visit…');
-      this.record = await this.plugin.store.outings.recordVisit(this.path, this.stopId, this.fields?.snapshot() ?? clone(this.input), { revision: this.record.revision, operationId: this.record.draft?.operationId, confirmSkipped: this.confirmSkipped, visitRevision: this.visitRevision });
+      this.attemptedOperationId = this.record.draft?.operationId ?? this.attemptedOperationId ?? crypto.randomUUID();
+      this.record = await this.plugin.store.outings.recordVisit(this.path, this.stopId, this.fields?.snapshot() ?? clone(this.input), { revision: this.record.revision, operationId: this.attemptedOperationId, confirmSkipped: this.confirmSkipped, visitRevision: this.visitRevision });
       this.completed = true; this.setSaving(false); this.close();
       try { if (this.afterSave) await this.afterSave(); else await this.plugin.openFile(this.path); }
       catch (error) { new Notice('Visit saved. Reopen the outing to continue: ' + errorText(error)); return; }
       new Notice(this.afterSave ? 'Visit saved' : 'Visit saved; next stop ready');
     } catch (error) {
       this.status.setText('Not completed: ' + errorText(error)); this.status.addClass('charity-error');
-      try { this.record = await this.plugin.store.outings.get(this.path); } catch { /* Keep the draft and reported error. */ }
+      let latest: OutingRecord | undefined;
+      try { latest = await this.plugin.store.outings.get(this.path); } catch { /* Keep the form and its original comparison. */ }
       this.setSaving(false);
-      if (this.record.operation) this.showRecovery();
+      if (latest?.operation && latest.operation.id === this.attemptedOperationId && latest.operation.stopId === this.stopId) {
+        this.record = latest; this.showRecovery();
+      } else if (latest && latest.revision !== this.record.revision) this.showConflict();
     }
   }
+  private showConflict(): void {
+    if (this.conflictEl) return;
+    const el = this.conflictEl = this.contentEl.createDiv('charity-empty-state');
+    el.createEl('p', { text: 'The saved outing changed. Your input is still here and can be copied. Reloading replaces this form with the saved details; closing below leaves the other saved work unchanged.', cls: 'charity-hint' });
+    button(el, 'Reload saved details', async () => {
+      if (this.saving) return;
+      this.setSaving(true); modalWindow(this).clearTimeout(this.timer);
+      try { await this.queue.catch(() => undefined); await this.load(); }
+      catch (error) { this.status.setText('Could not reload: ' + errorText(error)); }
+      finally { this.setSaving(false); }
+    });
+    button(el, 'Close without saving this form', () => {
+      if (this.saving) return;
+      this.changed = false; this.queue = Promise.resolve(); this.close();
+    });
+  }
   private showRecovery(): void {
-    modalWindow(this).clearTimeout(this.timer); this.contentEl.empty();
+    modalWindow(this).clearTimeout(this.timer); this.fields?.dispose?.(); this.contentEl.empty();
     renderContextBanner(this.plugin, this.contentEl);
     this.contentEl.createEl('p', { text: 'The visit save needs completion. Its original input is retained. Retry completion before editing or advancing this stop.', cls: 'charity-error' });
     button(this.contentEl, 'Retry completion', async () => {

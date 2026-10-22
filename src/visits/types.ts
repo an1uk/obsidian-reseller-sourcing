@@ -30,7 +30,7 @@ export interface VisitRejectedAssociation {
 }
 export interface VisitInspection { visits: VisitRecord[]; warnings: string[]; rejectedAssociations?: VisitRejectedAssociation[]; }
 
-export interface VisitDraftState { input: VisitInput; revision: string; visitRevision?: string; cleared?: boolean; }
+export interface VisitDraftState { input: VisitInput; revision: string; visitRevision?: string; cleared?: boolean; operationId?: string; savedVisit?: VisitRecord; }
 
 /** Validated, read-only summaries for choosing saved work on Home. */
 export interface VisitDraftSummary {

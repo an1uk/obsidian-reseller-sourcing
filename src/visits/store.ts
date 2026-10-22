@@ -227,7 +227,10 @@ export class VisitStore {
   async create(sourcePath: string, input: VisitInput, options: VisitSaveOptions = {}): Promise<VisitRecord> { return this.host.exclusive(() => this.createNow(sourcePath, input, options)); }
   /** Internal: caller already holds the shared serial lane. */
   async createNow(sourcePath: string, value: VisitInput, options: VisitSaveOptions = {}): Promise<VisitRecord> {
-    const input = validateVisitInput(value), source = await this.source(sourcePath), id = options.operationId ?? crypto.randomUUID(), opPath = this.operationPath(id), inputHash = await hashText(JSON.stringify(input));
+    const input = validateVisitInput(value), source = await this.source(sourcePath);
+    const draft = options.draftRevision !== undefined ? await this.assertDraftRevisionNow(sourcePath, undefined, options.draftRevision) : undefined;
+    const id = options.operationId ?? draft?.operationId ?? crypto.randomUUID(), opPath = this.operationPath(id), inputHash = await hashText(JSON.stringify(input));
+    if (draft && (!draft.operationId || draft.operationId !== id)) throw Error('The visit draft save identity changed. Reopen or resave its details before recording.');
     if (this.host.app.vault.getAbstractFileByPath(opPath)) {
       const { op } = await this.operation(id);
       if (op.kind !== 'create' || op.sourcePath !== sourcePath || op.inputHash !== inputHash || (op.outingId ?? '') !== (options.outingId ?? '') || (op.stopId ?? '') !== (options.stopId ?? '')) throw Error('This visit identifier has conflicting saved details.');
@@ -242,13 +245,15 @@ export class VisitStore {
     const expected = inputRecord(seed, input, recordedAt);
     const op: VisitOperation = { schema: 1, kind: 'create', id, stage: 'prepared', sourcePath, sourceIdentity: source.identity, sourceBeforeHash: await hashText(source.raw), input, inputHash, recordedAt, visitPath, visitId: id, expected, beforeValues: this.sourceBeforeValues(source.raw, input),
       ...(options.outingPath ? { outingPath: options.outingPath } : {}), ...(options.outingId ? { outingId: options.outingId } : {}), ...(options.stopId ? { stopId: options.stopId } : {}) };
-    if (options.draftRevision !== undefined) await this.assertDraftRevisionNow(sourcePath, undefined, options.draftRevision);
     await this.ensureNoPending(sourcePath, id); await this.host.folder(this.host.root() + '/System/Visit operations'); await this.host.app.vault.create(opPath, this.encodeOperation(op));
     return this.runNow(id);
   }
   async update(path: string, input: VisitInput, revision: string, options: VisitSaveOptions = {}): Promise<VisitRecord> { return this.host.exclusive(() => this.updateNow(path, input, revision, options)); }
   async updateNow(path: string, value: VisitInput, revision: string, options: VisitSaveOptions = {}): Promise<VisitRecord> {
-    const input = validateVisitInput(value), record = await this.get(path), id = options.operationId ?? crypto.randomUUID(), inputHash = await hashText(JSON.stringify(input));
+    const input = validateVisitInput(value), record = await this.get(path);
+    const draft = options.draftRevision !== undefined ? await this.assertDraftRevisionNow(record.sourcePath, path, options.draftRevision) : undefined;
+    const id = options.operationId ?? draft?.operationId ?? crypto.randomUUID(), inputHash = await hashText(JSON.stringify(input));
+    if (draft && (!draft.operationId || draft.operationId !== id)) throw Error('The visit draft save identity changed. Reopen or resave its details before recording.');
     if (this.host.app.vault.getAbstractFileByPath(this.operationPath(id))) {
       const { op } = await this.operation(id);
       if (op.kind !== 'update' || op.visitPath !== path || op.inputHash !== inputHash) throw Error('This visit identifier has conflicting saved details.');
@@ -260,7 +265,6 @@ export class VisitStore {
     const op: VisitOperation = { schema: 1, kind: 'update', id, stage: 'prepared', sourcePath: record.sourcePath, sourceIdentity: source.identity, sourceBeforeHash: await hashText(source.raw), input, inputHash, recordedAt,
       visitPath: path, visitId: record.id, beforeVisitHash: record.revision, expected: inputRecord(record, input, recordedAt), beforeValues: this.sourceBeforeValues(source.raw, input),
       ...(record.outingPath ? { outingPath: record.outingPath } : {}), ...(record.outingId ? { outingId: record.outingId } : {}), ...(record.stopId ? { stopId: record.stopId } : {}) };
-    if (options.draftRevision !== undefined) await this.assertDraftRevisionNow(record.sourcePath, path, options.draftRevision);
     await this.ensureNoPending(record.sourcePath, id); await this.host.folder(this.host.root() + '/System/Visit operations'); await this.host.app.vault.create(this.operationPath(id), this.encodeOperation(op));
     return this.runNow(id);
   }
@@ -333,14 +337,18 @@ export class VisitStore {
     if (existing && (op.kind === 'create' || !fileLike(existing) || await hashText(await this.host.app.vault.read(existing)) !== op.beforeVisitHash)) throw Error('The visit may already be saved. Finish recovery instead of cancelling.');
     op.stage = 'cancelled'; await this.writeOperation(op, raw);
   }
-  private async drafts(): Promise<{ file: TFile; raw: string; value: { sourcePath: string; sourceIdentity: string; visitPath?: string; input: VisitInput; cleared?: boolean; visitRevision?: string } }[]> {
-    const values: { file: TFile; raw: string; value: { sourcePath: string; sourceIdentity: string; visitPath?: string; input: VisitInput; cleared?: boolean; visitRevision?: string } }[] = [];
+  private async drafts(expectedSourcePath: string): Promise<{ file: TFile; raw: string; value: { sourcePath: string; sourceIdentity: string; visitPath?: string; input: VisitInput; cleared?: boolean; visitRevision?: string; operationId?: string } }[]> {
+    const values: { file: TFile; raw: string; value: { sourcePath: string; sourceIdentity: string; visitPath?: string; input: VisitInput; cleared?: boolean; visitRevision?: string; operationId?: string } }[] = [];
     for (const f of notebookFiles(this.host.app.vault, this.host.root()).filter(f => this.owns(f.path, 'System/Visit drafts') && f.extension === 'json')) {
-      const raw = await this.host.app.vault.read(f), v: unknown = JSON.parse(raw);
-      if (!object(v) || v.schema !== 1 || typeof v.sourcePath !== 'string' || typeof v.sourceIdentity !== 'string' || !visitInputShape(v.input) || v.visitPath !== undefined && typeof v.visitPath !== 'string' || v.visitRevision !== undefined && typeof v.visitRevision !== 'string' || v.cleared !== undefined && typeof v.cleared !== 'boolean') throw Error('Review the invalid standalone visit draft before continuing.');
+      const raw = await this.host.app.vault.read(f); let v: unknown;
+      // UUID filenames do not identify a source. Unidentifiable files stay untouched
+      // and remain visible in inspectSavedWork; never guess which source owns them.
+      try { v = JSON.parse(raw); } catch { continue; }
+      if (!object(v) || typeof v.sourcePath !== 'string' || linkPath(v.sourcePath) !== expectedSourcePath) continue;
+      if (v.schema !== 1 || typeof v.sourceIdentity !== 'string' || !visitInputShape(v.input) || v.visitPath !== undefined && typeof v.visitPath !== 'string' || v.visitRevision !== undefined && typeof v.visitRevision !== 'string' || v.cleared !== undefined && typeof v.cleared !== 'boolean' || v.operationId !== undefined && !safeId(v.operationId)) throw Error('Review the invalid standalone visit draft for this source: ' + f.path);
       const sourcePath = linkPath(v.sourcePath), visitPath = v.visitPath ? linkPath(v.visitPath) : undefined;
       if (!this.ownsSource(sourcePath) || visitPath && !this.owns(visitPath, 'Visits')) throw Error('A visit draft points outside this notebook.');
-      values.push({ file: f, raw, value: { sourcePath, sourceIdentity: v.sourceIdentity, input: v.input, ...(visitPath ? { visitPath } : {}), ...(v.visitRevision ? { visitRevision: v.visitRevision } : {}), ...(typeof v.cleared === 'boolean' ? { cleared: v.cleared } : {}) } });
+      values.push({ file: f, raw, value: { sourcePath, sourceIdentity: v.sourceIdentity, input: v.input, ...(visitPath ? { visitPath } : {}), ...(v.visitRevision ? { visitRevision: v.visitRevision } : {}), ...(typeof v.cleared === 'boolean' ? { cleared: v.cleared } : {}), ...(typeof v.operationId === 'string' ? { operationId: v.operationId } : {}) } });
     }
     return values;
   }
@@ -357,6 +365,7 @@ export class VisitStore {
         if (!object(value) || value.schema !== 1 || typeof value.sourcePath !== 'string' || typeof value.sourceIdentity !== 'string' || !object(value.input)) throw Error('This saved visit draft has invalid properties.');
         if (value.cleared === true) continue;
         if (value.cleared !== undefined && value.cleared !== false) throw Error('This visit draft has an invalid cleared state.');
+        if (value.operationId !== undefined && !safeId(value.operationId)) throw Error('This visit draft has an invalid save identity.');
         const sourcePath = linkPath(value.sourcePath);
         if (!this.ownsSource(sourcePath)) throw Error('This visit draft points outside this notebook.');
         const source = await this.source(sourcePath);
@@ -379,8 +388,9 @@ export class VisitStore {
           if (!this.owns(visitPath, 'Visits')) throw Error('This visit draft points outside this notebook.');
           const visit = await this.get(visitPath);
           if (visit.sourcePath !== sourcePath) throw Error('This draft belongs to another source.');
-          if (typeof value.visitRevision !== 'string' || value.visitRevision !== visit.revision) throw Error('The saved visit changed after this draft was reviewed. Review the draft and visit before continuing.');
-          visitRevision = value.visitRevision;
+          const saved = visitInputShape(input) ? await this.draftOperationState(sourcePath, value.sourceIdentity, input, visitPath, typeof value.operationId === 'string' ? value.operationId : undefined) : {};
+          if (!saved.savedVisit && (typeof value.visitRevision !== 'string' || value.visitRevision !== visit.revision)) throw Error('The saved visit changed after this draft was reviewed. Review the draft and visit before continuing.');
+          visitRevision = typeof value.visitRevision === 'string' ? value.visitRevision : undefined;
         } else if (value.visitRevision !== undefined) throw Error('This draft has a visit comparison without a visit link.');
         result.drafts.push({ path: f.path, sourcePath, sourceName: source.place.name, updatedAt: value.updatedAt, revision: await hashText(raw), ...(visitPath ? { visitPath, visitRevision } : {}) });
       } catch (e) { warn(f.path, e); }
@@ -409,16 +419,36 @@ export class VisitStore {
     result.operations.sort((a, b) => Date.parse(b.recordedAt) - Date.parse(a.recordedAt) || a.id.localeCompare(b.id));
     return result;
   }
-  private async assertDraftRevisionNow(sourcePath: string, visitPath: string | undefined, expected: string): Promise<void> {
+  /** A draft identity survives closing and moves; completed saves never replay their input. */
+  private async draftOperationState(sourcePath: string, sourceIdentity: string, input: VisitInput, visitPath: string | undefined, operationId: string | undefined): Promise<Pick<VisitDraftState, 'operationId' | 'savedVisit'>> {
+    if (!operationId) return {};
+    if (!this.host.app.vault.getAbstractFileByPath(this.operationPath(operationId))) return { operationId };
+    const { op } = await this.operation(operationId);
+    if (op.kind !== (visitPath ? 'update' : 'create') || op.expected.id !== op.visitId || op.expected.sourcePath !== op.sourcePath || op.sourceIdentity !== sourceIdentity || !!op.expected.sourcingExample !== !!this.host.examples || op.expected.outingId !== op.outingId || op.expected.stopId !== op.stopId || !visitPath && (op.outingPath || op.outingId || op.stopId)) throw Error('The visit draft points to another saved operation. Review the draft before continuing.');
+    if (visitPath) {
+      const visit = await this.get(visitPath);
+      if (visit.id !== op.visitId || visit.sourcePath !== sourcePath || visit.outingId !== op.outingId || visit.stopId !== op.stopId) throw Error('The saved visit identity or outing association changed. Review its draft before continuing.');
+    }
+    await this.verifyOperation(op);
+    if (op.stage === 'cancelled') return {};
+    if (op.inputHash !== await hashText(JSON.stringify(validateVisitInput(input)))) throw Error('The draft details differ from its saved visit operation. Review recovery before changing them.');
+    if (op.stage !== 'complete') return { operationId };
+    const visits = (await this.list(sourcePath)).filter(visit => visit.id === op.visitId && (!visitPath || visit.path === visitPath));
+    if (visits.length !== 1) throw Error('The recorded visit is missing or ambiguous. Review its saved operation; this draft will not create another visit.');
+    return { operationId, savedVisit: visits[0] };
+  }
+  private async assertDraftRevisionNow(sourcePath: string, visitPath: string | undefined, expected: string): Promise<VisitDraftState | undefined> {
     const state = await this.getDraftState(sourcePath, visitPath);
     if (typeof expected !== 'string' || (state?.revision ?? '') !== expected) throw Error('The visit draft changed in another pane before saving. Your form and the other draft were kept.');
+    return state;
   }
   async getDraftState(sourcePath: string, visitPath?: string): Promise<VisitDraftState | undefined> {
-    const source = await this.source(sourcePath), found = (await this.drafts()).filter(({ value: v }) => v.sourcePath === sourcePath && (v.visitPath ?? '') === (visitPath ?? ''));
+    const source = await this.source(sourcePath), found = (await this.drafts(sourcePath)).filter(({ value: v }) => v.sourcePath === sourcePath && (v.visitPath ?? '') === (visitPath ?? ''));
     if (found.length > 1) throw Error('More than one draft exists for this visit. Review them before continuing.');
     const entry = found[0]; if (!entry) return undefined;
     if (!entry.value.cleared && entry.value.sourceIdentity !== source.identity) throw Error('The source identity changed after this draft was saved.');
-    return { input: structuredClone(entry.value.input), revision: await hashText(entry.raw), ...(entry.value.visitRevision ? { visitRevision: entry.value.visitRevision } : {}), ...(entry.value.cleared ? { cleared: true } : {}) };
+    const operation = entry.value.cleared ? {} : await this.draftOperationState(sourcePath, entry.value.sourceIdentity, entry.value.input, visitPath, entry.value.operationId);
+    return { input: structuredClone(entry.value.input), revision: await hashText(entry.raw), ...(entry.value.visitRevision ? { visitRevision: entry.value.visitRevision } : {}), ...(entry.value.cleared ? { cleared: true } : {}), ...operation };
   }
   async getDraft(sourcePath: string, visitPath?: string): Promise<VisitInput | undefined> {
     const state = await this.getDraftState(sourcePath, visitPath); return state && !state.cleared ? state.input : undefined;
@@ -428,13 +458,20 @@ export class VisitStore {
       const source = await this.source(sourcePath); if (visitPath && (await this.get(visitPath)).sourcePath !== sourcePath) throw Error('This draft belongs to another source.');
       if (!object(input) || ![input.observations, input.finds, input.nextTime, input.visitDate].every(v => typeof v === 'string') || [input.itemsPurchased, input.haulPotential].some(v => v !== undefined && (typeof v !== 'number' || !Number.isFinite(v)))) throw Error('The visit draft contains unsupported values.');
       if (visitRevision !== undefined && !/^[a-f0-9]{64}$/.test(visitRevision)) throw Error('The visit draft has no valid reviewed visit revision.');
-      const drafts = (await this.drafts()).filter(({ value: v }) => v.sourcePath === sourcePath && (v.visitPath ?? '') === (visitPath ?? ''));
+      const drafts = (await this.drafts(sourcePath)).filter(({ value: v }) => v.sourcePath === sourcePath && (v.visitPath ?? '') === (visitPath ?? ''));
       if (drafts.length > 1) throw Error('More than one draft exists for this visit.');
       const old = drafts[0];
       if (old ? !expectedDraftRevision || await hashText(old.raw) !== expectedDraftRevision : !!expectedDraftRevision) throw Error('The visit draft changed in another pane. Your form has been kept; reopen or review the saved draft before continuing.');
       if (old && !old.value.cleared && old.value.sourceIdentity !== source.identity) throw Error('The source was replaced after its visit draft was saved.');
       if (old && !old.value.cleared && old.value.visitRevision !== visitRevision) throw Error('Keep the original reviewed visit revision with this draft. Reopen its details before rebasing.');
-      const next = JSON.stringify({ schema: 1, sourcePath: wiki(sourcePath), sourceIdentity: source.identity, ...(visitPath ? { visitPath: wiki(visitPath) } : {}), ...(visitRevision ? { visitRevision } : {}), input: structuredClone(input), updatedAt: new Date().toISOString(), cleared: false }, null, 2) + '\n';
+      let operationId = old && !old.value.cleared ? old.value.operationId : undefined;
+      if (old && operationId && this.host.app.vault.getAbstractFileByPath(this.operationPath(operationId))) {
+        const state = await this.draftOperationState(sourcePath, source.identity, old.value.input, visitPath, operationId);
+        if (state.operationId) throw Error(state.savedVisit ? 'This visit is already saved. Finish its draft cleanup before entering another visit.' : 'Finish or cancel the saved visit operation before changing its draft.');
+        operationId = undefined;
+      }
+      operationId ??= crypto.randomUUID();
+      const next = JSON.stringify({ schema: 1, sourcePath: wiki(sourcePath), sourceIdentity: source.identity, ...(visitPath ? { visitPath: wiki(visitPath) } : {}), ...(visitRevision ? { visitRevision } : {}), operationId, input: structuredClone(input), updatedAt: new Date().toISOString(), cleared: false }, null, 2) + '\n';
       if (old) await this.host.app.vault.process(old.file, current => { if (current !== old.raw) throw Error('The visit draft changed elsewhere.'); return next; });
       else { await this.host.folder(this.host.root() + '/System/Visit drafts'); await this.host.app.vault.create(this.host.root() + '/System/Visit drafts/' + crypto.randomUUID() + '.json', next); }
       return hashText(next);
@@ -443,7 +480,7 @@ export class VisitStore {
   async clearDraft(sourcePath: string, visitPath?: string, expectedDraftRevision = ''): Promise<void> {
     return this.host.exclusive(async () => {
       await this.source(sourcePath);
-      const drafts = (await this.drafts()).filter(({ value: v }) => v.sourcePath === sourcePath && (v.visitPath ?? '') === (visitPath ?? ''));
+      const drafts = (await this.drafts(sourcePath)).filter(({ value: v }) => v.sourcePath === sourcePath && (v.visitPath ?? '') === (visitPath ?? ''));
       if (drafts.length > 1) throw Error('More than one draft exists for this visit.');
       const draft = drafts[0];
       if (!draft) { if (expectedDraftRevision) throw Error('The saved visit draft was removed or changed.'); return; }

@@ -142,12 +142,12 @@ test('legacy preparing manifests reconcile completed hashes rather than treating
 
 test('partial migration on another device is blocked until explicit rollback verifies original files', async () => {
   const f = fixture(); await f.store.setup(); const rename = f.vault.renameFile.bind(f.vault); let count = 0;
-  f.app.fileManager.renameFile = async (file, path) => { if (++count === 3) throw new Error('Interrupted'); await rename(file as TFile, path); };
+  f.app.vault.rename = async (file, path) => { if (++count === 3) throw new Error('Interrupted'); await rename(file as TFile, path); };
   await assert.rejects(f.store.moveNotebook('Shared sourcing'), /Move stopped safely/);
   const device = freshDevice(f), preview = await device.store.inspectExistingNotebook('Reseller sourcing');
   assert.ok(preview.blockers.some(value => /mixed or unverifiable/.test(value)));
   await assert.rejects(device.store.attachExistingNotebook(preview.root, preview.fingerprint), /mixed or unverifiable/);
-  f.app.fileManager.renameFile = rename; await f.store.rollbackMove();
+  f.app.vault.rename = rename; await f.store.rollbackMove();
   const restored = await device.store.inspectExistingNotebook('Reseller sourcing'); assert.deepEqual(restored.blockers, []);
   await device.store.attachExistingNotebook(restored.root, restored.fingerprint);
 });

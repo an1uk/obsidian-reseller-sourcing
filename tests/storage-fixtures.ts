@@ -29,6 +29,7 @@ export class MemoryVault {
     if (this.beforeProcess) { entry.text = this.beforeProcess(file.path, entry.text!); this.beforeProcess = undefined; }
     const next = callback(entry.text!); entry.text = next; return next;
   }
+  async rename(file: TFile, nextPath: string) { return this.renameFile(file, nextPath); }
   async renameFile(file: TFile, nextPath: string) {
     if (this.failRename) { this.failRename = false; throw Error('Simulated archive error'); }
     if (this.entries.has(nextPath)) throw Error('Already exists');

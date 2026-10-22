@@ -223,7 +223,7 @@ export class CaptureModal extends Modal {
     }
     if (this.draft.coordinateIssue) el.createEl('p', { text: this.draft.coordinateIssue, cls: 'charity-hint' });
     const mapEl = el.createDiv('charity-capture-preview');
-    this.map = mountPlaceMap(this.owner, mapEl, this.plugin.mapHost, { records: this.previewRecords(), focusPath: this.previewPath(), onPick: coords => {
+    this.map = mountPlaceMap(this.owner, mapEl, this.plugin.mapHost, { records: this.previewRecords(), focusPath: this.previewPath(), unsavedPath: this.previewPath(), onPick: coords => {
       this.draft.coordinates = coords; if (this.coordsInput) this.coordsInput.value = coords.join(', '); this.map?.setRecords(this.previewRecords()); this.updateSuggestions();
     } });
     this.area.mount(el);

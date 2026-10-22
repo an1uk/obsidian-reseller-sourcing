@@ -66,8 +66,10 @@ export function parseGooglePlaceUrl(value: string): GooglePlaceResult {
     const identities = node.children.filter(t => t.field === 1 && t.type === 's' && t.value);
     const locations = node.children.filter(t => t.field === 8 && t.type === 'm');
     const coordinates = locations.length === 1 ? exactPair(locations[0].children) : null;
-    if (identities.length === 1 && coordinates) return { coordinates, placeId: identities[0].value, canonicalUrl };
-    return issue('The selected place has ambiguous or invalid coordinates. Place the pin manually.', canonicalUrl);
+    const placeId = identities.length === 1 ? identities[0].value : undefined;
+    if (placeId && coordinates) return { coordinates, placeId, canonicalUrl };
+    // A selected identity is independent of its pin; ambiguous coordinates still require manual placement.
+    return { ...issue('The selected place has ambiguous or invalid coordinates. Place the pin manually.', canonicalUrl), ...(placeId ? { placeId } : {}) };
   }
   // Older minimal place links can contain just one bare 3d/4d pair.
   const minimal = exactPair(roots);
@@ -80,9 +82,8 @@ export function parseGooglePlaceUrl(value: string): GooglePlaceResult {
   return issue('The destination cannot be distinguished safely from other places in this URL. Place the pin manually.', canonicalUrl);
 }
 
-export function canonicalPlaceIdentity(url: string): string | null {
-  const parsed = parseGooglePlaceUrl(url);
-  if (parsed.placeId) return `google:${parsed.placeId.toLowerCase()}`;
+function identityForParsedUrl(url: string, parsed: GooglePlaceResult, selectedIdentity = true): string | null {
+  if (selectedIdentity && parsed.placeId) return `google:${parsed.placeId.toLowerCase()}`;
   if (!isGoogleMapsUrl(url)) return null;
   const u = new URL(url);
   const id = u.searchParams.get('query_place_id') || u.searchParams.get('place_id');
@@ -92,6 +93,17 @@ export function canonicalPlaceIdentity(url: string): string | null {
   let name = u.pathname.split('/')[3] ?? '';
   try { name = decodeURIComponent(name); } catch { return null; }
   return parsed.coordinates ? `google-location:${parsed.coordinates.join(',')}:${name.toLowerCase()}` : null;
+}
+
+export function canonicalPlaceIdentity(url: string): string | null {
+  return identityForParsedUrl(url, parseGooglePlaceUrl(url));
+}
+/** Validate old portable receipts without weakening identity matching between new captures and sources. */
+export function matchesSavedPlaceIdentity(url: string, saved: unknown): boolean {
+  const parsed = parseGooglePlaceUrl(url);
+  if (saved === identityForParsedUrl(url, parsed)) return true;
+  // Earlier releases omitted the selected identity whenever its coordinates were unavailable.
+  return !!parsed.placeId && !parsed.coordinates && saved === identityForParsedUrl(url, parsed, false);
 }
 
 export function navigationUrl(coordinates: unknown, mode: 'driving' | 'walking'): string {

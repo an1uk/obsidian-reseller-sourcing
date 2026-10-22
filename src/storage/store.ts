@@ -542,7 +542,7 @@ export class SourcingStore {
       const previous = this.settings.captureReceipts[current.captureId];
       if (previous && previous !== target.path) throw new Error('The updates are saved, but the capture receipt points to another note. Inspect both records before retrying.');
       this.settings.captureReceipts[current.captureId] = target.path;
-      try { await this.saveSettings(); await this.archiveRefreshCapture(current); }
+      try { await this.saveSettings(); await this.archiveCapture(current); }
       catch (error) { throw new Error('The source decision is saved. Retry to finish archiving this capture; its updates will not be applied again. ' + (error instanceof Error ? error.message : String(error))); }
       return target;
     });
@@ -641,7 +641,7 @@ export class SourcingStore {
     }
     return executeMove(this.app, this.settings, () => this.saveSettings(), preview);
   }
-  private async archiveRefreshCapture(draft: CaptureDraft): Promise<void> {
+  private async archiveCapture(draft: CaptureDraft): Promise<void> {
     const source = await this.captureSource(draft);
     if (!source || !this.isCapturePath(source.path)) return;
     const target = this.paths.archives + '/' + draft.captureId + '.md';
@@ -665,15 +665,6 @@ export class SourcingStore {
       }
       throw new Error('Capture archival was rolled back to the inbox. The source decision remains saved; retry to finish archiving without reapplying updates. ' + String(error));
     }
-  }
-  private async archiveCapture(draft: CaptureDraft): Promise<void> {
-    if (this.mode === 'examples') return this.archiveRefreshCapture(draft);
-    const source = await this.captureSource(draft);
-    if (!source || !this.isCapturePath(source.path)) return;
-    const target = this.paths.archives + '/' + draft.captureId + '.md';
-    await this.folder(this.paths.archives);
-    if (this.app.vault.getAbstractFileByPath(target)) throw new Error('The capture archive destination already exists; inspect both captures before retrying.');
-    await this.app.fileManager.renameFile(source, target);
   }
   async addVisit(path: string, input: VisitInput): Promise<VisitRecord> { return this.visits.create(path, input); }
   async updateCoordinates(path: string, coords: Coordinates): Promise<void> {

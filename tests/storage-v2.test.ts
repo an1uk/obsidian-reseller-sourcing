@@ -149,12 +149,12 @@ test('interrupted moves block new writes and explicit rollback verifies every or
   await f.vault.create('Outside.md', '[[Reseller sourcing/Home]]');
   const before = contents(f), rename = f.vault.renameFile.bind(f.vault);
   let moves = 0;
-  f.app.fileManager.renameFile = async (file, target) => { if (++moves === 3) throw new Error('Injected interruption'); await rename(file as TFile, target); };
+  f.app.vault.rename = async (file, target) => { if (++moves === 3) throw new Error('Injected interruption'); await rename(file as TFile, target); };
   const preview = await f.store.previewNotebookMove('Moved');
   await assert.rejects(f.store.moveNotebook('Moved', preview), /Move stopped safely/);
   assert.equal(f.settings.migration?.status, 'failed');
   await assert.rejects(f.store.ensureLocality('New'), /interrupted move/);
-  f.app.fileManager.renameFile = rename;
+  f.app.vault.rename = rename;
   await f.store.rollbackMove();
   for (const [path, text] of Object.entries(before)) assert.equal(await f.vault.read(f.vault.getAbstractFileByPath(path) as TFile), text, path);
   assert.equal(f.settings.root, 'Reseller sourcing');
@@ -163,11 +163,11 @@ test('interrupted moves block new writes and explicit rollback verifies every or
 test('recovery refuses to overwrite edits made after an interrupted move', async () => {
   const f = fixture(); await f.store.setup();
   const rename = f.vault.renameFile.bind(f.vault); let calls = 0;
-  f.app.fileManager.renameFile = async (file, target) => { if (++calls === 2) throw new Error('Interrupted'); await rename(file as TFile, target); };
+  f.app.vault.rename = async (file, target) => { if (++calls === 2) throw new Error('Interrupted'); await rename(file as TFile, target); };
   await assert.rejects(f.store.moveNotebook('Moved'), /Move stopped safely/);
   const changed = f.vault.getFiles().find(file => file.path.startsWith('Moved/'))!;
   await f.vault.process(changed, text => text + '\nNew user edits');
-  f.app.fileManager.renameFile = rename;
+  f.app.vault.rename = rename;
   await assert.rejects(f.store.rollbackMove(), /new edits/);
   assert.match(await f.vault.read(changed), /New user edits/);
   assert.equal(f.settings.migration?.status, 'failed');

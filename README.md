@@ -1,8 +1,8 @@
 # Reseller sourcing
 
-An Obsidian plugin for planning sourcing trips, remembering places and recording visits. Version **0.14.0** is an **early release** for desktop and Android. Your records remain readable Markdown and YAML; inventory and sales can stay in your existing tools.
+An Obsidian plugin for planning sourcing trips, remembering places and recording visits. Version **0.14.1** is an **early release** for desktop and Android. Your records remain readable Markdown and YAML; inventory and sales can stay in your existing tools.
 
-Download the [0.14.0 release](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.14.0) for desktop or Android. Source: [an1uk/obsidian-reseller-sourcing](https://github.com/an1uk/obsidian-reseller-sourcing). The plugin is not yet listed in Community Plugins.
+Download the [0.14.1 release](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.14.1) for desktop or Android. Source: [an1uk/obsidian-reseller-sourcing](https://github.com/an1uk/obsidian-reseller-sourcing). The plugin is not yet listed in Community Plugins.
 
 ## Start in the workspace
 
@@ -84,7 +84,7 @@ The optional Guided tour can be deleted independently. Deleted example records o
 
 ## Build and install
 
-For the ready-to-install package, download **charity-sourcing-0.13.0.zip** from the [release page](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.13.0). The same release also provides **main.js**, **manifest.json** and **styles.css** separately, plus **release-checksums.json** with SHA-256 hashes. Desktop and Android use the same files. Follow the manual installation steps below.
+For the ready-to-install package, download **charity-sourcing-0.14.1.zip** from the [release page](https://github.com/an1uk/obsidian-reseller-sourcing/releases/tag/0.14.1). The same release also provides **main.js**, **manifest.json** and **styles.css** separately, plus **release-checksums.json** with SHA-256 hashes. Desktop and Android use the same files. Follow the manual installation steps below.
 
 Use **Node.js 22 or newer** and npm:
 

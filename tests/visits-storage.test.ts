@@ -251,3 +251,118 @@ test('visit creation and editing recheck the draft comparison in their serial ad
   await assert.rejects(f.store.visits.update(saved.path, a, saved.revision, { draftRevision: editA }), /draft changed/);
   assert.equal(await f.vault.read(file(f, saved.path)), raw);
 });
+
+
+test('invalid drafts are isolated to their identified source while unrelated drafts remain usable', async () => {
+  const f = await ready(), area = await f.store.ensureLocality('Elsewhere');
+  const other = await f.store.saveCapture({ ...newDraft('other'), name: 'Other source' }, area.path, 'Other source');
+  const revision = await f.store.visits.saveDraft(f.source.path, input({ observations: 'Intact draft' }));
+  const invalidPath = f.store.root + '/System/Visit drafts/invalid-other.json';
+  const invalid = JSON.stringify({ schema: 1, sourcePath: '[[' + other.path.replace(/\.md$/, '') + ']]', sourceIdentity: 'other', input: { observations: 42 }, updatedAt: '2026-10-18T10:00:00Z' });
+  await f.vault.create(invalidPath, invalid);
+  const unidentifiedPath = f.store.root + '/System/Visit drafts/unidentified.json';
+  await f.vault.create(unidentifiedPath, '{ incomplete JSON');
+  const inspected = await f.store.visits.inspectSavedWork();
+  assert.equal(inspected.drafts.length, 1); assert.equal(inspected.warnings.length, 2);
+  assert.equal((await f.store.visits.getDraftState(f.source.path))?.revision, revision);
+  const next = await f.store.visits.saveDraft(f.source.path, input({ observations: 'Still editable' }), undefined, revision);
+  const visit = await f.store.visits.create(f.source.path, input({ observations: 'Still editable' }), { draftRevision: next });
+  await f.store.visits.clearDraft(f.source.path, undefined, next);
+  assert.equal(visit.observations, 'Still editable');
+  for (const action of [() => f.store.visits.getDraftState(other.path), () => f.store.visits.saveDraft(other.path, input()), () => f.store.visits.clearDraft(other.path)]) {
+    await assert.rejects(action, error => error instanceof Error && error.message.includes('invalid standalone visit draft') && error.message.includes(invalidPath));
+  }
+  assert.equal(await f.vault.read(file(f, invalidPath)), invalid);
+  assert.equal(await f.vault.read(file(f, unidentifiedPath)), '{ incomplete JSON');
+});
+
+test('an unparseable former target draft cannot be replaced or saved using its earlier comparison', async () => {
+  const f = await ready(), revision = await f.store.visits.saveDraft(f.source.path, input({ observations: 'Before corruption' }));
+  const draft = f.vault.getFiles().find(value => value.path.includes('/System/Visit drafts/'))!;
+  await f.vault.process(draft, () => '{ interrupted JSON');
+  const before = new Map([...f.vault.entries].map(([path, entry]) => [path, entry.text]));
+  await assert.rejects(f.store.visits.saveDraft(f.source.path, input(), undefined, revision), /draft changed/);
+  await assert.rejects(f.store.visits.clearDraft(f.source.path, undefined, revision), /removed or changed/);
+  await assert.rejects(f.store.visits.create(f.source.path, input(), { draftRevision: revision }), /draft changed/);
+  assert.deepEqual(new Map([...f.vault.entries].map(([path, entry]) => [path, entry.text])), before);
+  assert.equal((await f.store.visits.inspectSavedWork()).warnings[0]?.path, draft.path);
+});
+
+
+test('draft completion identities survive reopening and rotate only for a new visit', async () => {
+ const f=await ready(),value=input({observations:'A single visit',rating:4});
+ const revision=await f.store.visits.saveDraft(f.source.path,value),initial=(await f.store.visits.getDraftState(f.source.path))!;
+ assert.ok(initial.operationId);
+ const reopened=new SourcingStore(f.app,f.settings,f.save);
+ const visit=await reopened.visits.create(f.source.path,value,{draftRevision:revision});
+ await f.store.updateAssessment(f.source.path,{rating:1});
+ const again=new SourcingStore(f.app,f.settings,f.save),state=(await again.visits.getDraftState(f.source.path))!;
+ assert.equal(state.operationId,initial.operationId);assert.equal(state.savedVisit?.id,visit.id);
+ await assert.rejects(again.visits.saveDraft(f.source.path,input({itemsPurchased:5}),undefined,state.revision),/already saved/);
+ await again.visits.clearDraft(f.source.path,undefined,state.revision);
+ const cleared=(await again.visits.getDraftState(f.source.path))!;
+ await again.visits.saveDraft(f.source.path,input({itemsPurchased:1}),undefined,cleared.revision);
+ assert.notEqual((await again.visits.getDraftState(f.source.path))!.operationId,initial.operationId);
+ assert.equal((await again.visits.list()).length,1);assert.equal(readNote(await f.vault.read(f.source)).properties.rating,1);
+});
+
+test('durable draft identity cannot be replaced by an arbitrary save operation', async () => {
+ const f=await ready(),revision=await f.store.visits.saveDraft(f.source.path,input());
+ const before=new Map([...f.vault.entries].map(([path,entry])=>[path,entry.text]));
+ await assert.rejects(f.store.visits.create(f.source.path,input(),{draftRevision:revision,operationId:'different-id'}),/identity changed/);
+ assert.deepEqual(new Map([...f.vault.entries].map(([path,entry])=>[path,entry.text])),before);
+});
+
+test('a pending operation keeps its input immutable until explicit cancellation', async () => {
+ const f=await ready(),value=input(),revision=await f.store.visits.saveDraft(f.source.path,value),state=(await f.store.visits.getDraftState(f.source.path))!;
+ const create=f.vault.create.bind(f.vault);let fail=true;
+ f.vault.create=async(path,text)=>{if(fail&&path.includes('/Visits/')){fail=false;throw Error('Prepare only');}return create(path,text);};
+ await assert.rejects(f.store.visits.create(f.source.path,value,{draftRevision:revision}),/Prepare only/);
+ await assert.rejects(f.store.visits.saveDraft(f.source.path,input({itemsPurchased:5}),undefined,revision),/Finish or cancel/);
+ await f.store.visits.cancelOperation(state.operationId!);
+ const next=await f.store.visits.saveDraft(f.source.path,input({itemsPurchased:5}),undefined,revision);
+ assert.notEqual((await f.store.visits.getDraftState(f.source.path))!.operationId,state.operationId);
+ assert.equal((await f.store.visits.create(f.source.path,input({itemsPurchased:5}),{draftRevision:next})).itemsPurchased,5);
+});
+
+test('deleted completed visits cannot be recreated from their retained draft', async () => {
+ const f=await ready(),revision=await f.store.visits.saveDraft(f.source.path,input()),saved=await f.store.visits.create(f.source.path,input(),{draftRevision:revision});
+ f.vault.entries.delete(saved.path);const before=new Map([...f.vault.entries].map(([path,entry])=>[path,entry.text]));
+ await assert.rejects(f.store.visits.getDraftState(f.source.path),/missing or ambiguous/);
+ await assert.rejects(f.store.visits.create(f.source.path,input(),{draftRevision:revision}),/missing or ambiguous/);
+ assert.deepEqual(new Map([...f.vault.entries].map(([path,entry])=>[path,entry.text])),before);
+});
+
+test('legacy drafts without completion identities remain editable and bind before a new save', async () => {
+ const f=await ready();await f.store.visits.saveDraft(f.source.path,input({observations:'Legacy input'}));
+ const draft=f.vault.getFiles().find(file=>file.path.includes('/Visit drafts/'))!;
+ await f.vault.process(draft,raw=>{const data=JSON.parse(raw);delete data.operationId;return JSON.stringify(data);});
+ const legacy=(await f.store.visits.getDraftState(f.source.path))!;assert.equal(legacy.operationId,undefined);assert.equal(legacy.savedVisit,undefined);
+ const revision=await f.store.visits.saveDraft(f.source.path,legacy.input,undefined,legacy.revision);
+ assert.ok((await f.store.visits.getDraftState(f.source.path))!.operationId);
+ const saved=await f.store.visits.create(f.source.path,legacy.input,{draftRevision:revision});assert.equal(saved.observations,'Legacy input');
+});
+
+test('a linked visit edit draft rejects a changed outing association after completion', async () => {
+ const f=await ready(),outing=await f.store.outings.create({name:'Linked',groups:[{id:'g',parkingPath:'',stops:[{id:'s',sourcePath:f.source.path,status:'pending'}]}]});
+ const recorded=await f.store.outings.recordVisit(outing.path,'s',input()),path=recorded.groups[0]!.stops[0]!.visitPath!,visit=await f.store.visits.get(path);
+ const revision=await f.store.visits.saveDraft(f.source.path,input({itemsPurchased:4}),path,'',visit.revision);
+ await f.store.visits.update(path,input({itemsPurchased:4}),visit.revision,{draftRevision:revision});
+ assert.equal((await f.store.visits.getDraftState(f.source.path,path))!.savedVisit?.id,visit.id);
+ await f.vault.process(file(f,path),raw=>updateNoteProperty(raw,'stop_id','another-stop'));
+ await assert.rejects(f.store.visits.getDraftState(f.source.path,path),/identity or outing association changed/);
+});
+
+
+test('completed draft cleanup follows a notebook move without replaying the archived operation', async () => {
+ const f=await ready(),value=input({itemsPurchased:2,rating:4}),revision=await f.store.visits.saveDraft(f.source.path,value);
+ const visit=await f.store.visits.create(f.source.path,value,{draftRevision:revision}),oldRoot=f.store.root,oldSource=f.source.path;
+ await f.store.moveNotebook('Moved notebook');
+ const sourcePath=oldSource.replace(oldRoot,f.store.root),visitPath=visit.path.replace(oldRoot,f.store.root);
+ const reopened=new SourcingStore(f.app,f.settings,f.save),state=(await reopened.visits.getDraftState(sourcePath))!;
+ assert.equal(state.savedVisit?.path,visitPath);assert.equal(state.savedVisit?.id,visit.id);
+ const source=f.vault.getFiles().find(file=>file.path===sourcePath)!;
+ await f.store.updateAssessment(sourcePath,{rating:1});const sourceBefore=await f.vault.read(source);
+ await reopened.visits.clearDraft(sourcePath,undefined,state.revision);
+ assert.equal((await reopened.visits.list()).length,1);assert.equal(await f.vault.read(source),sourceBefore);
+});

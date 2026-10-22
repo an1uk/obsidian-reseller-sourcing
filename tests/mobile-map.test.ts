@@ -134,13 +134,13 @@ test('touch popup focuses its close control, supports Escape and restores the tr
 test('inline touch markers use the same bounded popup and fictional navigation remains a preview',async()=>{
   const m=await load(`export {PlaceMap} from './src/map/place-map';`);
   const root=new Element(),external:unknown[]=[];
-  const host={app:app(),mode:'examples',settings:{root:'Notebook/Examples',tileSets:[]},openParking(){},confirmMove(){},openExternal:(...args:unknown[])=>external.push(args)};
+  const host={app:app(),mode:'examples',settings:{root:'Notebook/Examples',tileSets:[]},getPlaces:async()=>[record],openParking(){},confirmMove(){},openExternal:(...args:unknown[])=>external.push(args)};
   const record={path:'Notebook/Examples/Places/Exampletown/Fictional shop.md',name:'Fictional shop',kind:'shop',coordinates:[12,34],properties:{rating:3.5,google_maps_url:'https://www.google.com/maps/place/Fictional+shop',comments:'The coat had a promising label and an unpromising zip'}};
   const place=new m.PlaceMap(root,host,{records:[record]});await place.initialize();
   const marker=(globalThis as any).__markers.at(-1);marker.options.element.click();
   assert.equal((globalThis as any).__popups.length,0);
   const popup=root.children[0].children.find(el=>el.className==='charity-map-touch-popup')!;
-  assert.ok(popup);popup.find('Preview Google Maps')!.click();await tick();
+  assert.ok(popup);await tick();popup.find('Preview Google Maps')!.click();await tick();
   assert.equal(external.length,1);assert.equal((external[0] as unknown[])[1],'Google Maps');
   popup.find('Close')!.click();assert.equal(root.find('Close'),undefined);place.onunload();
 });

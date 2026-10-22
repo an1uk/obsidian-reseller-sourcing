@@ -25,7 +25,7 @@ import { defaultPlaceQuery, normalisePlaceQuery, normalisePlaceSort, serialisePl
 import { renderPlaceSummary } from '../ui/place-summary';
 import { detailMapPlaces } from '../map/detail';
 import { openPlaceEditor, resumePlaceEditor } from '../place-edit/editor';
-import { checkedViewState } from './view-state';
+import { checkedViewState, remapWorkspacePaths } from './view-state';
 export { routeForPath } from './routes';
 
 export const WORKSPACE_VIEW = 'reseller-sourcing-workspace';
@@ -103,7 +103,7 @@ export class SourcingWorkspace extends ItemView {
         if (this.closed) return;
         if (this.body?.contains(this.containerEl.ownerDocument.activeElement) && this.containerEl.ownerDocument.activeElement?.matches('input,textarea,select')) { this.pendingRefresh = true; return; }
         this.pendingRefresh = false;
-        if (this.map && this.state.route.screen === 'area') { void this.refreshMap(); return; }
+        if (this.context && this.map && this.state.route.screen === 'area') { void this.refreshMap(); return; }
         void this.render().catch(e => this.showError(e));
       }, 180);
     };
@@ -112,24 +112,10 @@ export class SourcingWorkspace extends ItemView {
     this.registerEvent(this.app.vault.on('rename', (file, old) => {
       if (old === this.root + '/Home.md') {
         const before = this.root; this.state.root = file.path.slice(0,-'/Home.md'.length);
-        if ('path' in this.state.route) this.state.route.path = this.state.route.path.replace(before+'/',this.root+'/');
-        if (this.state.places?.area) this.state.places.area = this.state.places.area.replace(before+'/',this.root+'/');
-        const query = this.state.places?.criteria;
-        if (query) {
-          query.area = query.area.replace(before+'/', this.root+'/');
-          if (query.nearby?.reference.kind === 'place') query.nearby.reference.path = query.nearby.reference.path.replace(before+'/',this.root+'/');
-        }
+        remapWorkspacePaths(this.state, this.history, before, this.root, true);
         this.context = undefined;
-      }
-      if ('path' in this.state.route && this.state.route.path === old) this.state.route.path = file.path;
-      for (const position of Object.values(this.state.positions ?? {})) if (position.focus === 'place:' + old) position.focus = 'place:' + file.path;
-      if (this.state.places?.area === old) this.state.places.area = file.path;
-      const criteria = this.state.places?.criteria;
-      if (criteria) {
-        if (criteria.area === old) criteria.area = file.path;
-        const reference = criteria.nearby?.reference;
-        if (reference?.kind === 'place' && reference.path === old) reference.path = file.path;
-      }
+      } else remapWorkspacePaths(this.state, this.history, old, file.path);
+      this.app.workspace.requestSaveLayout();
       update(file);
     }));
   }
@@ -277,7 +263,7 @@ export class SourcingWorkspace extends ItemView {
         f.query = browser.query.text; f.area = browser.query.area; f.kind = browser.query.kind === 'all' ? '' : browser.query.kind; f.shortlist = browser.query.shortlist;
         this.app.workspace.requestSaveLayout();
       },
-      plan: (query, sort) => new OutingPreparationModal(c, undefined, undefined, { query: serialisePlaceQuery(query), sort }).open(),
+      plan: (query, sort) => new OutingPreparationModal(c, undefined, undefined, { query, sort }).open(),
       more: parent => {
         button(parent, 'Source tables and comparisons', () => this.openNote(c.root + '/System/Sources.base'));
         button(parent, 'Parking tables', () => this.openNote(c.root + '/System/Parking.base'));

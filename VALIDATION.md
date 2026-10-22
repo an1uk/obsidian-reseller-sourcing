@@ -1,6 +1,14 @@
-# Validation: Reseller sourcing 0.14.0
+# Validation: Reseller sourcing 0.14.1
 
 One shared desktop/Android plugin, ID **charity-sourcing**, requiring Obsidian **1.14.4** or newer. Clipper templates remain **v0.4.2**. This document distinguishes repeatable public-tree checks from historical native and physical acceptance. Private captures, screenshots, device details, vault paths and test harnesses are not included in the repository.
+
+## 0.14.1 verification
+
+On 22 October 2026, source/CSS lint, type checking, the production build, packaging and licence checks passed. The portable suite completed 737 tests: **734 passed, zero failed and three optional integration checks skipped**, as described below. Release-file hashes, ZIP integrity and all packaged payload checksums were verified. Frozen historical example outputs remained unchanged. No runtime dependency or Clipper export change was needed.
+
+New regressions cover durable visit-save identities, cleanup after closing and reopening, outing-linked visit edits, concurrent personal corrections, retained legacy drafts, interrupted saves, malformed unrelated records, contact-only and partial-coordinate place drafts, exact Google identity matching without coordinates, legacy refresh receipts, byte-preserving capture archival and rollback, filtered-map parking destinations, stale popup lookups, fictional mobile navigation previews, reviewed moves, retained browsing state, overnight 24-hour opening and local-date outing folders. Tests use fictional records and isolated in-memory or temporary notebooks.
+
+Physical Android, interactive Chrome capture, real notebook sync, live Google routing capacity and location-permission checks were **not repeated for 0.14.1**. Earlier native and physical results below are historical evidence for those versions, not acceptance of this patch. Publishing this release does not install it into a vault or rewrite personal notes.
 
 ## 0.14.0 verification
 

@@ -150,10 +150,10 @@ test('address hint editing validates targets and hints follow area/root moves an
   assert.equal(f.settings.areaHints[0]!.townPath, 'Moved notebook/Places/Exampletown/Area.md');
   assert.equal(f.settings.areaHints[0]!.localityPath, 'Moved notebook/Places/Exampletown/Waterside/Area.md');
   const before = structuredClone(f.settings.areaHints), rename = f.vault.renameFile.bind(f.vault); let count = 0;
-  f.app.fileManager.renameFile = async (file, path) => { if (++count === 2) throw new Error('Interrupted'); await rename(file as TFile, path); };
+  f.app.vault.rename = async (file, path) => { if (++count === 2) throw new Error('Interrupted'); await rename(file as TFile, path); };
   await assert.rejects(f.store.moveNotebook('Failed notebook'), /Move stopped safely/);
   await assert.rejects(f.store.removeAreaHint(original.id), /interrupted move/);
-  f.app.fileManager.renameFile = rename; await f.store.rollbackMove();
+  f.app.vault.rename = rename; await f.store.rollbackMove();
   assert.deepEqual(f.settings.areaHints, before);
   await f.store.removeAreaHint(original.id); assert.equal(f.settings.areaHints.length, 0);
 });
@@ -205,9 +205,9 @@ test('address mapping town context follows child reparenting and survives rollba
   assert.equal(hint.townPath, other.path);
   assert.equal(hint.localityPath, 'Reseller sourcing/Places/Other town/Riverside/Area.md');
   const oldHint = structuredClone(hint), rename = f.vault.renameFile.bind(f.vault);
-  f.app.fileManager.renameFile = async () => { throw new Error('Interrupt'); };
+  f.app.vault.rename = async () => { throw new Error('Interrupt'); };
   await assert.rejects(f.store.moveLocality(hint.localityPath, 'River district', other.path), /Move stopped safely/);
-  f.app.fileManager.renameFile = rename;
+  f.app.vault.rename = rename;
   await f.store.rollbackMove();
   assert.deepEqual(f.settings.areaHints[0], oldHint);
 });
